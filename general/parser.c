@@ -1,12 +1,7 @@
 /*
- * WebAssembler - .iwa to .wassm Compiler
- * Compiles custom AArch64-inspired assembly (.iwa) to bytecode (.wassm)
- *
- * Usage: ./assembler input.iwa output.wassm
- *
- * Opcode Table (must match vm.js exactly):
- *   0   = lds   (Load Direct String)
- *   1   = adl   (Add Length / string length)
+ * Opcode Table:
+ *   0   = lds
+ *   1   = adl
  *   2   = mov
  *   3   = ldr
  *   4   = str
@@ -270,9 +265,6 @@
 #define MAX_INSTRS    65536
 #define TOKEN_MAX     512
 
-/* =========================================================
- * Opcode definitions  (must match vm.js)
- * ========================================================= */
 typedef enum {
     OP_LDS    = 0,
     OP_ADL    = 1,
@@ -522,7 +514,6 @@ typedef enum {
 
 /* =========================================================
  * Register encoding
- * Register is encoded as: <family><number>
  *   family: 0=x, 1=w, 2=sp, 3=lr, 4=pc, 5=xzr, 6=wzr,
  *           7=fp(x29), 8=ip0(x16), 9=ip1(x17)
  *           10=d (float64), 11=s (float32), 12=q (128-bit)
@@ -544,7 +535,6 @@ typedef struct {
 static Label  labels[MAX_LABELS];
 static int    label_count = 0;
 
-/* Fixup: a bytecode line that references a label by name */
 typedef struct {
     int   bytecode_line;   /* which output line has the placeholder */
     int   token_index;     /* which token in that line is the label ref */
