@@ -1,4 +1,5 @@
-# WebAssembler
+<img width="900" height="200" alt="wl-banner" src="https://github.com/PoTiwi/WebAssembler/ico/wl-banner.png" />
+
 
 A compiler that translates custom AArch64-inspired assembly source files (`.iwa`) into text-based bytecode files (`.wassm`) for use with a compatible virtual machine (e.g. `vm.js`).
 
