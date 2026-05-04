@@ -2417,7 +2417,7 @@ int main(int argc, char *argv[]) {
 
     /* Header */
     fprintf(fout, "; WebAssembler Raw Bytecode\n");
-    fprintf(fout, "; Not recommended to edit\n");
+    fprintf(fout, "; Not recommended to modify\n");
     fprintf(fout, "; Contents of %s\n", argv[1]);
     fprintf(fout, "; Lines ≈ %d\n", out_count);
     fprintf(fout, ";;;;;\n");
