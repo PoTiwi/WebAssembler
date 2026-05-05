@@ -17,7 +17,7 @@ extern "C" {
  * Configuration
  * ========================================================================== */
 #define WAHF_MAX_LINE_LEN   1024
-#define WAHF_INDENT         "    "
+#define WAHF_INDENT         "\n"
 
 /* ============================================================================
  * Register constants
