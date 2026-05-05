@@ -1,4 +1,4 @@
-<img width="900" height="200" alt="wl-banner" src="https://github.com/PoTiwi/wlbi/blob/main/ico/wl-bg-banner.png" /> 
+<img width="900" height="200" alt="wl-banner" src="https://github.com/PoTiwi/WebAssembler/blob/main/ico/wl-bg-banner.png" /> 
 
 <hr>
 A compiler that translates custom AArch64-inspired assembly into plain-text bytecode, which can then be run by the JavaScript VM — either in a browser or in Node.js.
