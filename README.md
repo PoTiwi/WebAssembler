@@ -1,5 +1,4 @@
 <img width="900" height="200" alt="wl-banner" src="https://github.com/PoTiwi/WebAssembler/blob/main/ico/wl-bg-banner.png" /> 
-
 <hr>
 A compiler that translates custom AArch64-inspired assembly into plain-text bytecode, which can then be run by the JavaScript VM — either in a browser or in Node.js.
 
@@ -92,10 +91,10 @@ Drop `wlbi.js` into your project. Then in your HTML:
 ```html
 <script src="wlbi.js"></script>
 <script>
-  wlbi.onOutput = (text) => console.log(text);
+  webassembler.onOutput = (text) => console.log(text);
 
-  wlbi.init("hello.wassm", () => {
-    wlbi.execute();
+  webassembler.init("hello.wassm", () => {
+    webassembler.execute();
   });
 </script>
 ```
@@ -103,19 +102,19 @@ Drop `wlbi.js` into your project. Then in your HTML:
 ### Step 3 (alternative) — Run it in Node.js
 
 ```js
-const wlbi = require('./wlbi.js');
+const webassembler = require('./wlbi.js');
 const readline = require('readline');
 
 // Wire up I/O
-wlbi.onOutput = (text) => process.stdout.write(text);
-wlbi.onError  = (text) => process.stderr.write(text);
-wlbi.onInput  = () => new Promise(resolve => {
+webassembler.onOutput = (text) => process.stdout.write(text);
+webassembler.onError  = (text) => process.stderr.write(text);
+webassembler.onInput  = () => new Promise(resolve => {
   const rl = readline.createInterface({ input: process.stdin });
   rl.once('line', line => { rl.close(); resolve(line); });
 });
 
-wlbi.init('hello.wassm', () => {
-  wlbi.execute();
+webassembler.init('hello.wassm', () => {
+  webassembler.execute();
 });
 ```
 
@@ -134,14 +133,14 @@ clang -O2 -o assembler assembler.c
 Usage:
 
 ```sh
-./assembler <input.iwa> <output.wassm>
+./wa-c <input.iwa> <output.wassm>
 ```
 
 ---
 
 ## JavaScript VM Reference
 
-`wlbi.js` exposes a single global object (or CommonJS module export) called `wlbi`. Everything is async under the hood — programs that need input (`geti`, `gets`) suspend and wait for a Promise to resolve before continuing.
+`wlbi.js` exposes a single global object (or CommonJS module export) called `webassembler`. Everything is async under the hood — programs that need input (`geti`, `gets`) suspend and wait for a Promise to resolve before continuing.
 
 ### Loading bytecode
 
@@ -149,44 +148,44 @@ There are three ways to get bytecode into the VM:
 
 ```js
 // From a URL (uses fetch — works in the browser and Node ≥18)
-wlbi.init("program.wassm", callback);
+webassembler.init("program.wassm", callback);
 
 // From a raw string (useful for embedding bytecode inline)
-wlbi.initFromString(bytecodeSrc, callback);
+webassembler.initFromString(bytecodeSrc, callback);
 
 // From a File or Blob object (browser file input, drag-and-drop, etc.)
-wlbi.initFromFile(fileObject, callback);
+webassembler.initFromFile(fileObject, callback);
 ```
 
 All three return a `Promise` and also accept an optional callback — use whichever style you prefer:
 
 ```js
 // Promise style
-await wlbi.init("program.wassm");
-await wlbi.execute();
+await webassembler.init("program.wassm");
+await webassembler.execute();
 
 // Callback style
-wlbi.init("program.wassm", () => wlbi.execute());
+webassembler.init("program.wassm", () => webassembler.execute());
 ```
 
 ### I/O hooks
 
-Set these **before** calling `execute()`. They are plain properties on the `wlbi` object.
+Set these **before** calling `execute()`. They are plain properties on the `webassembler` object.
 
 ```js
 // Called whenever the program prints something (puts, itoa+puts, etc.)
-wlbi.onOutput = (text) => {
+webassembler.onOutput = (text) => {
   document.getElementById("output").textContent += text;
 };
 
 // Called for debug dumps (dmp instruction) and VM error messages
-wlbi.onError = (text) => {
+webassembler.onError = (text) => {
   console.error(text);
 };
 
 // Called whenever the program reads input (geti, gets).
 // Must return a Promise<string>.
-wlbi.onInput = () => {
+webassembler.onInput = () => {
   return new Promise(resolve => {
     // Show your own input UI, then resolve with the user's string
     showInputDialog().then(resolve);
@@ -200,11 +199,11 @@ If you don't set `onInput`, the VM falls back to the browser's built-in `prompt(
 
 ```js
 // Basic — run to completion
-await wlbi.execute();
+await webassembler.execute();
 
 // With a custom yield threshold (default is 50 000)
 // Lower = more responsive UI during tight loops; Higher = faster execution
-await wlbi.execute(10_000);
+await webassembler.execute(10_000);
 ```
 
 `execute()` returns a Promise that resolves when the program reaches `halt` or runs off the end of the bytecode.
@@ -218,7 +217,7 @@ This wires up a simple terminal-style UI: a scrolling output area and an input f
 <html>
 <head>
   <meta charset="utf-8">
-  <title>wlbi</title>
+  <title>WebAssembler</title>
 </head>
 <body>
   <pre id="output"></pre>
@@ -232,12 +231,12 @@ This wires up a simple terminal-style UI: a scrolling output area and an input f
     // Queue of pending input resolvers
     const inputQueue = [];
 
-    wlbi.onOutput = (text) => { output.textContent += text; };
-    wlbi.onError  = (text) => { output.textContent += '[ERR] ' + text + '\n'; };
+    webassembler.onOutput = (text) => { output.textContent += text; };
+    webassembler.onError  = (text) => { output.textContent += '[ERR] ' + text + '\n'; };
 
     // When the program asks for input, push a resolver onto the queue.
     // It resolves when the user presses Enter.
-    wlbi.onInput = () => new Promise(resolve => {
+    webassembler.onInput = () => new Promise(resolve => {
       inputQueue.push(resolve);
       inputBox.focus();
     });
@@ -258,9 +257,9 @@ This wires up a simple terminal-style UI: a scrolling output area and an input f
       e.preventDefault();
       const file = e.dataTransfer.files[0];
       if (!file) return;
-      await wlbi.initFromFile(file);
+      await webassembler.initFromFile(file);
       output.textContent = '';
-      wlbi.execute();
+      webassembler.execute();
     });
   </script>
 </body>
@@ -270,21 +269,21 @@ This wires up a simple terminal-style UI: a scrolling output area and an input f
 ### Full Node.js example
 
 ```js
-const wlbi = require('./wlbi.js');
+const webassembler = require('./wlbi.js');
 const readline     = require('readline');
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const ask = (prompt) => new Promise(resolve => rl.question(prompt, resolve));
 
-wlbi.onOutput = (text) => process.stdout.write(text);
-wlbi.onError  = (text) => process.stderr.write('[ERR] ' + text + '\n');
-wlbi.onInput  = ()     => ask('');
+webassembler.onOutput = (text) => process.stdout.write(text);
+webassembler.onError  = (text) => process.stderr.write('[ERR] ' + text + '\n');
+webassembler.onInput  = ()     => ask('');
 
 const file = process.argv[2];
 if (!file) { console.error('Usage: node run.js <program.wassm>'); process.exit(1); }
 
-wlbi.init(file, async () => {
-  await wlbi.execute();
+webassembler.init(file, async () => {
+  await webassembler.execute();
   rl.close();
 });
 ```
@@ -301,10 +300,10 @@ The VM yields to the browser's event loop every N instructions so the page stays
 
 ```js
 // More responsive during heavy loops (slower overall)
-wlbi.execute(5_000);
+webassembler.execute(5_000);
 
 // Maximum throughput for batch/non-interactive programs
-wlbi.execute(500_000);
+webassembler.execute(500_000);
 ```
 
 ---
@@ -898,7 +897,7 @@ Opcode 229 is a label marker used internally by the assembler and is never writt
 **Header:**
 
 ```
-; wlbi Bytecode v1.0
+; WebAssembler Bytecode v1.0
 ; Source: hello.iwa
 ; Lines: 3
 ;;;
@@ -917,7 +916,7 @@ Each line starts with the opcode number followed by space-separated operand toke
 **Example — the "Hello, World" program above:**
 
 ```
-; wlbi Bytecode v1.0
+; WebAssembler Bytecode v1.0
 ; Source: hello.iwa
 ; Lines: 3
 ;;;
