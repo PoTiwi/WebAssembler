@@ -1,85 +1,13 @@
-/*
- * c2iwa.c — C to .iwa transpiler  (v3)
- *
- * Fixes over v2:
- *   - Proper temporary register allocation: tmp pool is never pre-burned before
- *     materialise; returned VRegs are NOT freed until the caller is done with them.
- *     Each alloc_tmp() must be paired with free_tmp() only AFTER the value is consumed.
- *   - switch/case: each case now correctly emits its "next-case" skip label so the
- *     jump table works.  Fall-through between cases is also handled.
- *   - Function call arguments evaluated into dedicated temporaries before moving
- *     to x21-x26, so nested calls (f(g(x), h(y))) work correctly.
- *   - Register save/restore (push/pop) on function entry/exit so recursive and
- *     mutually-recursive functions don't clobber each other's locals.
- *   - Array element write  a[i] = expr  now supported.
- *   - String-value propagation after function calls: both integer and string slots
- *     of x0 are copied into the destination register.
- *   - Multi-word casts like (unsigned int) or (const char *) are handled.
- *   - do { } while with proper label placement.
- *   - Local variable scoping: variables declared inside { } blocks are properly
- *     hidden from outer scopes (scope_depth tracking + restore on block exit).
- *   - Implicit return 0 at end of non-void functions.
- *   - Unary plus (+x) now a no-op as in C.
- *   - sizeof(type) and sizeof(expr) both return 8 (64-bit machine assumption).
- *   - NULL literal mapped to 0.
- *   - Boolean short-circuit already correct; added proper 0/1 normalisation.
- *   - isdigit/isalpha/toupper/tolower/putchar/getchar stubs.
- *   - Multiple return statements in one function all work.
- *   - void functions: no return-value mov x0.
- *   - Improved error messages with source context.
- *   - String concatenation operator (+) between two string registers.
- *
- * Additions over v2:
- *   - Global variable segment: top-level declarations outside any function are
- *     initialised in a synthetic __global_init routine called before main.
- *   - Static local variables (treated as globals in the register file).
- *   - Ternary on left side of assignment is rejected with a clear error.
- *   - goto / label (basic single-function goto).
- *   - Comma operator in for-init and expression statements.
- *   - Compound literals are partially supported.
- *   - __builtin_expect(x,y) treated as x.
- *   - Hex/octal character literals.
- *   - Multiline string literals (adjacent string tokens are concatenated at
- *     transpile time).
- *   - sprintf (single-register, writes to dest string register).
- *   - sscanf (single-register, reads from source string register).
- *   - strtol, strtoll (calls atoi in the VM; ignores base/endptr).
- *   - memcmp stub.
- *   - isspace/isdigit/isalpha/isupper/islower/isalnum/ispunct — via custom opcodes
- *     emulated with inline comparisons.
- *   - tolower/toupper — inline computation.
- *   - putchar/getchar — via lds+puts / geti.
- *   - String indexing: s[i] reads a character (integer) from position i.
- *
- * Register layout (unchanged from v2):
- *   x0        — return value / I/O scratch
- *   x1..x20   — user variables (allocator hands these out in order)
- *   x21..x26  — function argument passing (caller-saved)
- *   x27       — loop/scratch
- *   x28       — expression scratch A  (alloc pool[0])
- *   x29       — expression scratch B  (alloc pool[1])
- *   x30 / lr  — link register (managed by call/ret)
- *
- * Temporary pool for expressions: x28, x29, x27, x26, x25, x24, x23, x22
- * (x22-x26 are ALSO used for arg passing; we save/restore them around calls when
- *  we detect nesting)
- *
- * Usage:  c2iwa <input.c> <output.iwa>
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 #include <ctype.h>
 
-/* ═══════════════════════════════════════════════════════════════
- * Constants & limits
- * ═══════════════════════════════════════════════════════════════ */
 #define MAX_VARS       512
 #define MAX_OUT        131072
-#define MAX_LINE       4096
-#define MAX_SRC        (8 << 20)   /* 8 MB */
+#define MAX_LINE       16000
+#define MAX_SRC        (24 << 20)   /* 24 MB */
 #define MAX_LABEL_LEN  128
 #define MAX_SCOPE      256
 #define MAX_FUNCS      256
@@ -284,8 +212,8 @@ static void c_str_to_iwa(const char *src, char *dst, int maxlen) {
     int di=0;
     for(int i=0; src[i]&&di<maxlen-4; i++) {
         unsigned char c=(unsigned char)src[i];
-        if     (c==' ')  { dst[di++]='\\'; dst[di++]='~'; }
-        else if(c=='\n') { dst[di++]='\\'; dst[di++]='n'; }
+        // if     (c==' ')  { dst[di++]='\\'; dst[di++]='~'; }
+        if(c=='\n') { dst[di++]='\\'; dst[di++]='n'; }
         else if(c=='\t') { dst[di++]='\\'; dst[di++]='t'; }
         else if(c=='\r') { dst[di++]='\\'; dst[di++]='r'; }
         else if(c=='\\') { dst[di++]='\\'; dst[di++]='\\'; }
@@ -2401,7 +2329,7 @@ int main(int argc, char *argv[]) {
     free(src);
 
     emit("; 2WA generated structure");
-    emit("; source of %s", argv[1]);
+    emit("; Source of %s", argv[1]);
     emit("; ; ; ; ;");
 
     compile_block_src(clean, ci);
