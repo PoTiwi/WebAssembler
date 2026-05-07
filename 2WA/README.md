@@ -15,7 +15,7 @@
 |  |
 |----------|
 | 🐣 [C](https://github.com/PoTiwi/WebAssembler/tree/main/2WA/C) |
-| 🥚 [C++](https://github.com/PoTiwi/WebAssembler/tree/main/2WA/CPP) |
+| 🐣 [C++](https://github.com/PoTiwi/WebAssembler/tree/main/2WA/C++) |
 | 🥚 [JavaScript](https://github.com/PoTiwi/WebAssembler/tree/main/2WA/JavaScript) |
 | 🥚 [Python](https://github.com/PoTiwi/WebAssembler/tree/main/2WA/Python) |
 | 🥚 [Lua](https://github.com/PoTiwi/WebAssembler/tree/main/2WA/Lua) |
