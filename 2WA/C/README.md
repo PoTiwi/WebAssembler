@@ -20,10 +20,12 @@ int main() { // Unwanted instance; Will loop itself.
 Because when the transpiler does its thing, it returns back to the begining since the return happened. <br>
 Causing a continuis loop. <br>
 
-Fix for this is to just not use a function
+Fix for this is to just not use a function:
 ```C
 // Correct
 #include <stdio.h>
 
 printf("Hello World");
 ```
+
+Functions may not be fully supported yet.
