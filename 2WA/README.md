@@ -4,17 +4,11 @@
 
 <hr>
 
-# 2WA — Web Assembler
-
-**2WA** (*short for “To Web Assembler”*) is a transpiler framework that converts multiple programming languages into the `.iwa` format.
-
-Each language implementation is designed to compile source files with their native extension into executable `.iwa` output.
+**2WA** (*short for “To Web Assembler”*) is a transpiler to convert supported languages into .iwa file.
 
 | 🥚 | Planned / not started <br>
 | 🐣 | In development <br>
 | 🐥 | Production-ready <br>
-
----
 
 ### Supported Languages
 
