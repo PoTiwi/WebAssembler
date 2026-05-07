@@ -6,8 +6,8 @@
 
 **2WA** (*short for “To Web Assembler”*) is a transpiler to convert supported languages into .iwa file.
 
-| 🥚 | Planned / not started <br>
-| 🐣 | In development <br>
+| 🥚 | Yet to be developed <br>
+| 🐣 | In development, use with causion <br>
 | 🐥 | Production-ready <br>
 
 ### Supported Languages
