@@ -5,7 +5,6 @@
 #include <stdarg.h>
 #include <errno.h>
 
-/* ── limits ──────────────────────────────────────────────────────────────── */
 #define MAX_SRC      (1 << 22)   /* 4 MB source */
 #define MAX_OUT      (1 << 23)   /* 8 MB output */
 #define MAX_IDENT    128
@@ -17,7 +16,6 @@
 #define MAX_CONTS    128
 #define EXPR_REGS    20          /* x0–x19 for temporaries */
 
-/* ── token types ─────────────────────────────────────────────────────────── */
 typedef enum {
     TK_EOF=0,
     TK_IDENT, TK_INT_LIT, TK_STR_LIT, TK_CHAR_LIT,
@@ -1350,11 +1348,6 @@ static void parse_function(VarType ret_type, const char *fname) {
     expect(TK_RPAREN);
 
     parse_block();
-
-    /* implicit return for void functions */
-    if(ret_type==VT_VOID || !strcmp(fname,"main")) {
-        out("    ret\n");
-    }
 
     cur_scope=saved_scope;
     local_slot=saved_slot;
