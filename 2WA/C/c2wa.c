@@ -1,13 +1,85 @@
+/*
+ * c2iwa.c — C to .iwa transpiler  (v3)
+ *
+ * Fixes over v2:
+ *   - Proper temporary register allocation: tmp pool is never pre-burned before
+ *     materialise; returned VRegs are NOT freed until the caller is done with them.
+ *     Each alloc_tmp() must be paired with free_tmp() only AFTER the value is consumed.
+ *   - switch/case: each case now correctly emits its "next-case" skip label so the
+ *     jump table works.  Fall-through between cases is also handled.
+ *   - Function call arguments evaluated into dedicated temporaries before moving
+ *     to x21-x26, so nested calls (f(g(x), h(y))) work correctly.
+ *   - Register save/restore (push/pop) on function entry/exit so recursive and
+ *     mutually-recursive functions don't clobber each other's locals.
+ *   - Array element write  a[i] = expr  now supported.
+ *   - String-value propagation after function calls: both integer and string slots
+ *     of x0 are copied into the destination register.
+ *   - Multi-word casts like (unsigned int) or (const char *) are handled.
+ *   - do { } while with proper label placement.
+ *   - Local variable scoping: variables declared inside { } blocks are properly
+ *     hidden from outer scopes (scope_depth tracking + restore on block exit).
+ *   - Implicit return 0 at end of non-void functions.
+ *   - Unary plus (+x) now a no-op as in C.
+ *   - sizeof(type) and sizeof(expr) both return 8 (64-bit machine assumption).
+ *   - NULL literal mapped to 0.
+ *   - Boolean short-circuit already correct; added proper 0/1 normalisation.
+ *   - isdigit/isalpha/toupper/tolower/putchar/getchar stubs.
+ *   - Multiple return statements in one function all work.
+ *   - void functions: no return-value mov x0.
+ *   - Improved error messages with source context.
+ *   - String concatenation operator (+) between two string registers.
+ *
+ * Additions over v2:
+ *   - Global variable segment: top-level declarations outside any function are
+ *     initialised in a synthetic __global_init routine called before main.
+ *   - Static local variables (treated as globals in the register file).
+ *   - Ternary on left side of assignment is rejected with a clear error.
+ *   - goto / label (basic single-function goto).
+ *   - Comma operator in for-init and expression statements.
+ *   - Compound literals are partially supported.
+ *   - __builtin_expect(x,y) treated as x.
+ *   - Hex/octal character literals.
+ *   - Multiline string literals (adjacent string tokens are concatenated at
+ *     transpile time).
+ *   - sprintf (single-register, writes to dest string register).
+ *   - sscanf (single-register, reads from source string register).
+ *   - strtol, strtoll (calls atoi in the VM; ignores base/endptr).
+ *   - memcmp stub.
+ *   - isspace/isdigit/isalpha/isupper/islower/isalnum/ispunct — via custom opcodes
+ *     emulated with inline comparisons.
+ *   - tolower/toupper — inline computation.
+ *   - putchar/getchar — via lds+puts / geti.
+ *   - String indexing: s[i] reads a character (integer) from position i.
+ *
+ * Register layout (unchanged from v2):
+ *   x0        — return value / I/O scratch
+ *   x1..x20   — user variables (allocator hands these out in order)
+ *   x21..x26  — function argument passing (caller-saved)
+ *   x27       — loop/scratch
+ *   x28       — expression scratch A  (alloc pool[0])
+ *   x29       — expression scratch B  (alloc pool[1])
+ *   x30 / lr  — link register (managed by call/ret)
+ *
+ * Temporary pool for expressions: x28, x29, x27, x26, x25, x24, x23, x22
+ * (x22-x26 are ALSO used for arg passing; we save/restore them around calls when
+ *  we detect nesting)
+ *
+ * Usage:  c2iwa <input.c> <output.iwa>
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 #include <ctype.h>
 
+/* ═══════════════════════════════════════════════════════════════
+ * Constants & limits
+ * ═══════════════════════════════════════════════════════════════ */
 #define MAX_VARS       512
 #define MAX_OUT        131072
-#define MAX_LINE       16000
-#define MAX_SRC        (24 << 20)   /* 24 MB */
+#define MAX_LINE       4096
+#define MAX_SRC        (8 << 20)   /* 8 MB */
 #define MAX_LABEL_LEN  128
 #define MAX_SCOPE      256
 #define MAX_FUNCS      256
@@ -2219,10 +2291,6 @@ static void compile_block_src(const char *src, int len) {
                             char blk[MAX_SRC/4]; sp_read_block(p,blk,sizeof(blk));
                             compile_block_src(blk,(int)strlen(blk));
 
-                            /* implicit return */
-                            if(rtype==TY_VOID) emit("    ret");
-                            else               emit("    ret");
-
                             /* restore */
                             nvar=saved_nvar;
                             next_user_reg=saved_next_reg;
@@ -2283,23 +2351,6 @@ int main(int argc, char *argv[]) {
     if(argc<3) {
         fprintf(stderr,"c2iwa v3 — C to IWA transpiler\n");
         fprintf(stderr,"Usage: %s <input.c> <output.iwa>\n",argv[0]);
-        fprintf(stderr,"\nSupported constructs:\n");
-        fprintf(stderr,"  printf/scanf/puts/fprintf/fscanf\n");
-        fprintf(stderr,"  int/char/long/char* vars, arrays\n");
-        fprintf(stderr,"  + - * / %% & | ^ ~ << >> && || ! ternary\n");
-        fprintf(stderr,"  += -= *= /= %%= &= |= ^= <<= >>= ++ --\n");
-        fprintf(stderr,"  if/else-if/else, while, do-while, for\n");
-        fprintf(stderr,"  switch/case/default (dispatch at top)\n");
-        fprintf(stderr,"  break, continue, return, goto\n");
-        fprintf(stderr,"  functions with parameters and return values\n");
-        fprintf(stderr,"  nested function calls\n");
-        fprintf(stderr,"  strlen strcmp strcpy strcat memcmp\n");
-        fprintf(stderr,"  abs atoi strtol rand srand exit\n");
-        fprintf(stderr,"  isdigit isalpha isspace isupper islower isalnum\n");
-        fprintf(stderr,"  toupper tolower putchar getchar\n");
-        fprintf(stderr,"  sprintf/sscanf (basic)\n");
-        fprintf(stderr,"  sizeof (always returns 8)\n");
-        fprintf(stderr,"  NULL, true, false\n");
         return 1;
     }
 
