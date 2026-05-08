@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <errno.h>
 
+/* ── limits ──────────────────────────────────────────────────────────────── */
 #define MAX_SRC      (1 << 22)   /* 4 MB source */
 #define MAX_OUT      (1 << 23)   /* 8 MB output */
 #define MAX_IDENT    128
@@ -16,6 +17,7 @@
 #define MAX_CONTS    128
 #define EXPR_REGS    20          /* x0–x19 for temporaries */
 
+/* ── token types ─────────────────────────────────────────────────────────── */
 typedef enum {
     TK_EOF=0,
     TK_IDENT, TK_INT_LIT, TK_STR_LIT, TK_CHAR_LIT,
@@ -536,8 +538,7 @@ static int parse_primary(void) {
         /* escape for lds */
         char escaped[2048]; int ei=0;
         for(int i=0;sbuf[i];i++){
-            if(sbuf[i]==' '){escaped[ei++]='\\';escaped[ei++]='~';}
-            else if(sbuf[i]=='\n'){escaped[ei++]='\\';escaped[ei++]='n';}
+            if(sbuf[i]=='\n'){escaped[ei++]='\\';escaped[ei++]='n';}
             else if(sbuf[i]=='\t'){escaped[ei++]='\\';escaped[ei++]='t';}
             else escaped[ei++]=sbuf[i];
         }
