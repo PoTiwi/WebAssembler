@@ -4,17 +4,17 @@
 
 <hr>
 
-**2WA** (*short for “To Web Assembler”*) is a transpiler to convert supported languages into .iwa file.
+**2WA** (*short for “To Web Assembler”*) is a transpiler to convert supported languages into WebAssembler instructions, like C, C++ and JavaScript
 
 🥚 - Yet to be developed <br>
 🐣 - In development, use with causion <br>
-🐥 - Production-ready <br>
+🐥 - Stable (enough) for production <br>
 
 ### Supported Languages
 
 |  |
 |----------|
-| 🐣 [C](https://github.com/PoTiwi/WebAssembler/tree/main/2WA/C) |
+| 🐣 [C](#C) |
 | 🐣 [C++](https://github.com/PoTiwi/WebAssembler/tree/main/2WA/C++) |
 | 🥚 [JavaScript](https://github.com/PoTiwi/WebAssembler/tree/main/2WA/JavaScript) |
 | 🥚 [Python](https://github.com/PoTiwi/WebAssembler/tree/main/2WA/Python) |
@@ -22,3 +22,10 @@
 | 🥚 [(AArch64) Assembly](https://github.com/PoTiwi/WebAssembler/tree/main/2WA/A64Assembly) |
 
 ---
+
+## Listed Languages
+
+### C
+> This language isnt ready for production. Please use with causion <br>
+> C is very important in the programming space. This will be the first language to come. <br>
+  - [c2wa](https://github.com/PoTiwi/WebAssembler/tree/main/2WA/C) - Uses a transpiler to convert C into near-native WebAssembler instructions for the virtual machine to run, Depending on the amount of instructions there are.
