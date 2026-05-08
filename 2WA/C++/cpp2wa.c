@@ -5,7 +5,6 @@
 #include <stdarg.h>
 #include <errno.h>
 
-/* ── limits ──────────────────────────────────────────────────────────────── */
 #define MAX_SRC      (1 << 22)   /* 4 MB source */
 #define MAX_OUT      (1 << 23)   /* 8 MB output */
 #define MAX_IDENT    128
@@ -17,7 +16,6 @@
 #define MAX_CONTS    128
 #define EXPR_REGS    20          /* x0–x19 for temporaries */
 
-/* ── token types ─────────────────────────────────────────────────────────── */
 typedef enum {
     TK_EOF=0,
     TK_IDENT, TK_INT_LIT, TK_STR_LIT, TK_CHAR_LIT,
@@ -1414,19 +1412,6 @@ int main(int argc,char *argv[]) {
     if(argc<3){
         fprintf(stderr,"c2iwa — C/C++ to .iwa transpiler\n");
         fprintf(stderr,"Usage: %s <input.cpp> <output.iwa>\n",argv[0]);
-        fprintf(stderr,"\nSupported subset:\n");
-        fprintf(stderr,"  - int/long/char/bool/void/string types\n");
-        fprintf(stderr,"  - if/else, while, for, do-while\n");
-        fprintf(stderr,"  - Arithmetic: + - * / %%\n");
-        fprintf(stderr,"  - Comparison: == != < <= > >=\n");
-        fprintf(stderr,"  - Logical: && || !\n");
-        fprintf(stderr,"  - Bitwise: & | ^ ~ << >>\n");
-        fprintf(stderr,"  - Assignment: = += -= *= /= %%=\n");
-        fprintf(stderr,"  - ++ / -- (pre and post)\n");
-        fprintf(stderr,"  - Functions with parameters and return values\n");
-        fprintf(stderr,"  - std::cout << / std::cin >>\n");
-        fprintf(stderr,"  - printf / scanf (basic)\n");
-        fprintf(stderr,"  - break / continue\n");
         return 1;
     }
 
