@@ -59,9 +59,7 @@
   const I64_MAX  = (1n << 63n) - 1n;
 
   function unescapeStr(s) {
-    // Fast path: skip the loop entirely when there are no escapes
     if (!s.includes('\\')) return s;
-
     let out = '';
     let i = 0;
     const len = s.length;
@@ -69,13 +67,13 @@
       if (s[i] === '\\' && i + 1 < len) {
         i++;
         switch (s[i]) {
-          case '~':  out += ' ';    break;  // space encoding
+          case '~':  out += ' ';    break;
           case 'n':  out += '\n';   break;
           case 't':  out += '\t';   break;
           case 'r':  out += '\r';   break;
           case '0':  out += '\0';   break;
-          case 'a':  out += '\x07'; break;  // BEL
-          case 'b':  out += '\x08'; break;  // BS
+          case 'a':  out += '\x07'; break;
+          case 'b':  out += '\x08'; break;
           case '\\': out += '\\';   break;
           default:   out += s[i];   break;
         }
@@ -115,55 +113,26 @@
     flags.Z = i64 === 0n;
   }
 
-  /**
-   * Performs addition with full flag update (N, Z, C, V).
-   *
-   * Carry:    computed in unsigned domain — set when the true sum overflows 64 bits.
-   * Overflow: set when two same-sign operands produce an opposite-sign result.
-   *           Note: overflow uses the original `b`, not `b + cin`, to correctly
-   *           model the AArch64 two's-complement overflow rule.
-   *
-   * @param {object} flags - NZCV flags object, mutated in place
-   * @param {bigint} a     - first operand (any 64-bit pattern)
-   * @param {bigint} b     - second operand (any 64-bit pattern)
-   * @param {bigint} cin   - carry-in (0n or 1n)
-   * @returns {bigint}       unsigned 64-bit result
-   */
   function addWithFlags(flags, a, b, cin = 0n) {
     const ua = BigInt.asUintN(64, a);
     const ub = BigInt.asUintN(64, b);
     const ur = ua + ub + cin;
-
     const u64 = ur & U64_MASK;
     const i64 = BigInt.asIntN(64, u64);
-
     flags.N = i64 < 0n;
     flags.Z = u64 === 0n;
-    flags.C = ur > U64_MASK;          // unsigned overflow → carry
-
-    // Signed overflow: same-sign inputs, different-sign output
+    flags.C = ur > U64_MASK;
     const sa = BigInt.asIntN(64, a) < 0n;
-    const sb = BigInt.asIntN(64, b) < 0n;  // original b, not b+cin
+    const sb = BigInt.asIntN(64, b) < 0n;
     const sr = i64 < 0n;
     flags.V = (sa === sb) && (sa !== sr);
-
     return u64;
   }
 
-  /**
-   * Performs subtraction (a - b) via two's complement addition.
-   * a - b  ≡  a + (~b) + 1
-   * This correctly models AArch64's borrow/carry convention where
-   * C=1 means no borrow (carry is the logical inverse of borrow).
-   */
   function subWithFlags(flags, a, b) {
     return addWithFlags(flags, a, ~b & U64_MASK, 1n);
   }
 
-  /**
-   * Applies a named shift/rotate to a 64-bit value.
-   * Returns the unshifted value when type is absent/none or amount is 0.
-   */
   function applyShift(val, type, amt) {
     if (!type || type === 'none' || amt === 0n) return val;
     const v = BigInt.asUintN(64, val);
@@ -182,7 +151,6 @@
   /* =========================================================
    * Bit-manipulation helpers
    * ========================================================= */
-  /** Count leading zeros in a 64-bit unsigned value. */
   function clz64(v) {
     v = BigInt.asUintN(64, v);
     if (v === 0n) return 64n;
@@ -194,7 +162,6 @@
     return n;
   }
 
-  /** Count leading sign bits (bits matching the MSB), excluding MSB itself. */
   function cls64(v) {
     const i64 = BigInt.asIntN(64, v);
     const sign = i64 < 0n ? 1n : 0n;
@@ -206,7 +173,6 @@
     return n;
   }
 
-  /** Reverse the order of all 64 bits. */
   function rbit64(v) {
     v = BigInt.asUintN(64, v);
     let r = 0n;
@@ -214,7 +180,6 @@
     return r;
   }
 
-  /** Reverse byte order of a 64-bit value. */
   function rev64(v) {
     v = BigInt.asUintN(64, v);
     let r = 0n;
@@ -222,14 +187,12 @@
     return r;
   }
 
-  /** Reverse bytes within each 32-bit half of a 64-bit value. */
   function rev32in64(v) {
     const lo = rev64(v & 0xFFFFFFFFn) >> 32n;
     const hi = rev64((v >> 32n) & 0xFFFFFFFFn) >> 32n;
     return (hi << 32n) | lo;
   }
 
-  /** Reverse bytes within each 16-bit quarter of a 64-bit value. */
   function rev16in64(v) {
     let r = 0n;
     for (let i = 0n; i < 4n; i++) {
@@ -242,49 +205,19 @@
   /* =========================================================
    * Register file + Memory
    * ========================================================= */
-  /**
-   * Register encoding scheme (family:number):
-   *   0  = x0–x30  (64-bit general purpose, signed store)
-   *   1  = w0–w30  (32-bit, zero-extended on write)
-   *   2  = sp      (stack pointer)
-   *   3  = lr/x30  (link register)
-   *   4  = xzr     (zero register, reads 0, writes discarded)
-   *   5,6 = reserved zeros
-   *   7  = fp/x29  (frame pointer alias)
-   *   8  = ip0/x16
-   *   9  = ip1/x17
-   *   10 = d0–d31  (64-bit float)
-   *   11 = s0–s31  (32-bit float, stored as f64 with fround)
-   */
   class Registers {
     constructor() {
-      this.x   = new Array(31).fill(0n);  // x0–x30
-      this.d   = new Array(32).fill(0.0); // d0–d31 / s0–s31
+      this.x   = new Array(31).fill(0n);
+      this.d   = new Array(32).fill(0.0);
       this.sp  = 0n;
       this.lr  = 0n;
-      // NZCV flags
       this.N   = false;
       this.Z   = false;
       this.C   = false;
       this.V   = false;
-      // VM-level pseudo stack (PUSH/POP opcodes)
       this.stack   = [];
-      // Byte-addressed memory as a Map<string, bigint> (8-byte aligned words)
       this.mem     = new Map();
-      // Per-register string values (for high-level string instructions)
       this.strings = new Map();
-    }
-
-    /**
-     * Parse a register encoding string "family:number" into its components.
-     * Returns [family, number], caching the split to avoid repeated string ops.
-     */
-    _parseEnc(enc) {
-      const colon = enc.indexOf(':');
-      if (colon < 0) return [0, 0];
-      return [Number(enc.charCodeAt(0) - 48), Number(enc.slice(colon + 1))];
-      // Note: family is a single digit (0–9), so charCodeAt is safe here.
-      // Fall back to Number() for robustness:
     }
 
     readInt(enc) {
@@ -306,20 +239,18 @@
     }
 
     writeInt(enc, val) {
-      // Normalise value to bigint early to avoid scattered coercions below
       if (typeof val === 'number') val = BigInt(Math.trunc(val));
       else if (typeof val !== 'bigint') val = 0n;
-
       const colon = enc.indexOf(':');
       if (colon < 0) return;
       const fam = Number(enc.slice(0, colon));
       const num = Number(enc.slice(colon + 1));
       switch (fam) {
         case 0: this.x[num]  = BigInt.asIntN(64, val);   break;
-        case 1: this.x[num]  = BigInt.asUintN(32, val);  break;  // zero-extend
+        case 1: this.x[num]  = BigInt.asUintN(32, val);  break;
         case 2: this.sp      = val;                       break;
         case 3: this.lr      = val;                       break;
-        case 4: case 5: case 6:                           break;  // discard
+        case 4: case 5: case 6:                           break;
         case 7: this.x[29]   = val;                       break;
         case 8: this.x[16]   = val;                       break;
         case 9: this.x[17]   = val;                       break;
@@ -344,7 +275,6 @@
       if (fam === 11) { this.d[num] = Math.fround(val);  return; }
     }
 
-    /** Returns true when the register encoding denotes a floating-point register. */
     isFloat(enc) {
       const colon = enc.indexOf(':');
       if (colon < 0) return false;
@@ -358,37 +288,15 @@
       else            this.strings.set(enc, s);
     }
 
-    /* ── Memory access ───────────────────────────────────────── */
+    memRead(addr)         { return this.mem.get(String(addr)) ?? 0n; }
+    memWrite(addr, val)   { this.mem.set(String(addr), BigInt.asIntN(64, val)); }
 
-    /**
-     * Read a 64-bit word from byte address `addr` (must be 8-byte aligned).
-     * Unwritten locations read as 0.
-     */
-    memRead(addr) {
-      return this.mem.get(String(addr)) ?? 0n;
-    }
-
-    /**
-     * Write a 64-bit word to byte address `addr` (must be 8-byte aligned).
-     */
-    memWrite(addr, val) {
-      this.mem.set(String(addr), BigInt.asIntN(64, val));
-    }
-
-    /**
-     * Read a single byte from an arbitrary byte address.
-     * Locates the containing 8-byte word and extracts the correct byte.
-     */
     memReadByte(addr) {
       const base = (addr / 8n) * 8n;
       const off  = Number(addr % 8n);
       return (this.memRead(base) >> BigInt(off * 8)) & 0xffn;
     }
 
-    /**
-     * Write a single byte to an arbitrary byte address.
-     * Performs a read-modify-write on the containing 8-byte word.
-     */
     memWriteByte(addr, val) {
       const base  = (addr / 8n) * 8n;
       const shift = BigInt(Number(addr % 8n) * 8);
@@ -396,16 +304,10 @@
       this.memWrite(base, (word & ~(0xffn << shift)) | ((val & 0xffn) << shift));
     }
 
-    /**
-     * Read a 16-bit little-endian halfword from an arbitrary byte address.
-     */
     memReadHalf(addr) {
       return this.memReadByte(addr) | (this.memReadByte(addr + 1n) << 8n);
     }
 
-    /**
-     * Write a 16-bit little-endian halfword to an arbitrary byte address.
-     */
     memWriteHalf(addr, val) {
       this.memWriteByte(addr,       val & 0xffn);
       this.memWriteByte(addr + 1n, (val >> 8n) & 0xffn);
@@ -413,22 +315,14 @@
   }
 
   /* =========================================================
-   * Parse .wassm source → array of token arrays
+   * Parser
    * ========================================================= */
-  /**
-   * Splits .wassm bytecode source into an array of instruction token arrays.
-   * Blank lines and lines starting with ';' are skipped entirely.
-   * Each instruction is pre-split on spaces so the VM never calls split() at runtime.
-   *
-   * @param {string} src - raw .wassm source text
-   * @returns {string[][]} array of token arrays, one per instruction
-   */
   function parseWassm(src) {
     const lines = src.split('\n');
     const code  = [];
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      if (!line || line.charCodeAt(0) === 59 /* ';' */) continue;
+      if (!line || line.charCodeAt(0) === 59) continue;
       const tokens = line.split(' ');
       if (tokens.length > 0 && tokens[0] !== '') code.push(tokens);
     }
@@ -438,15 +332,7 @@
   /* =========================================================
    * Async VM
    * ========================================================= */
-  /**
-   * The virtual machine.  One VM instance is created per `execute()` call
-   * and is not reused — state is completely isolated between runs.
-   */
   class VM {
-    /**
-     * @param {string[][]} code     - parsed instruction token arrays
-     * @param {object}     apiHooks - { onOutput, onError, onInput }
-     */
     constructor(code, apiHooks) {
       this.code      = code;
       this.pc        = 0;
@@ -463,13 +349,6 @@
       return this.api.onInput ? await this.api.onInput() : '';
     }
 
-    /**
-     * Run the program to completion (or until HALT).
-     * Yields to the event loop every `yieldEvery` steps to keep the browser responsive.
-     *
-     * @param {number} [yieldEvery=50000] - steps between event-loop yields
-     * @returns {Promise<void>}
-     */
     async run(yieldEvery = 50_000) {
       yieldEvery = Math.max(1, Math.min(1_000_000, yieldEvery | 0));
       let steps = 0;
@@ -479,39 +358,28 @@
         if (!instr || instr.length === 0) { this.pc++; continue; }
         await this.step(instr);
         if ((++steps & (yieldEvery - 1)) === 0) {
-          // Only yield when yieldEvery is a power of two; otherwise use modulo.
-          // For safety we always use setTimeout to allow cancellation.
           await new Promise(r => setTimeout(r, 0));
         }
       }
     }
 
-    /* -------------------------------------------------------
-     * Instruction dispatch
-     * ------------------------------------------------------- */
     async step(tok) {
       const op   = Number(tok[0]);
       const regs = this.regs;
 
       switch (op) {
-
-        /* ── String load ─────────────────────────────────────── */
         case OP.LDS: {
           const str = unescapeStr(tok[2] || '');
           regs.writeStr(tok[1], str);
           regs.writeInt(tok[1], BigInt(str.length));
           this.pc++; break;
         }
-
-        /* ── Address-of-label / string-length ────────────────── */
         case OP.ADL:
         case OP.STRLEN: {
           const s = regs.readStr(tok[2] || '');
           regs.writeInt(tok[1], s !== null ? BigInt(s.length) : 0n);
           this.pc++; break;
         }
-
-        /* ── Move ─────────────────────────────────────────────── */
         case OP.MOV: {
           if (tok[2] === 'R') {
             regs.writeInt(tok[1], regs.readInt(tok[3]));
@@ -522,7 +390,6 @@
           }
           this.pc++; break;
         }
-
         case OP.MOVZ: {
           const imm = BigInt(tok[2]), shift = BigInt(tok[3]);
           regs.writeInt(tok[1], (imm & 0xFFFFn) << shift);
@@ -543,15 +410,11 @@
         case OP.MVN:
           regs.writeInt(tok[1], ~regs.readInt(tok[2]));
           this.pc++; break;
-
-        /* ── Load / Store ─────────────────────────────────────── */
         case OP.LDR: {
           if (tok[2] === 'R') {
-            // High-level register-to-register load (copies string handle too)
             regs.writeInt(tok[1], regs.readInt(tok[3]));
             regs.writeStr(tok[1], regs.readStr(tok[3]));
           } else {
-            // Memory load: tok[3] = base register, tok[4] = byte offset
             const addr = regs.readInt(tok[3]) + BigInt(tok[4] || 0);
             regs.writeInt(tok[1], regs.memRead(addr));
           }
@@ -560,25 +423,20 @@
         case OP.STR:
           regs.memWrite(regs.readInt(tok[2]) + BigInt(tok[3] || 0), regs.readInt(tok[1]));
           this.pc++; break;
-
         case OP.LDRB:
           regs.writeInt(tok[1], regs.memReadByte(regs.readInt(tok[2]) + BigInt(tok[3] || 0)));
           this.pc++; break;
-
         case OP.LDRH:
           regs.writeInt(tok[1], regs.memReadHalf(regs.readInt(tok[2]) + BigInt(tok[3] || 0)));
           this.pc++; break;
-
         case OP.LDRSB:
           regs.writeInt(tok[1], BigInt.asIntN(8,
             regs.memReadByte(regs.readInt(tok[2]) + BigInt(tok[3] || 0))));
           this.pc++; break;
-
         case OP.LDRSH:
           regs.writeInt(tok[1], BigInt.asIntN(16,
             regs.memReadHalf(regs.readInt(tok[2]) + BigInt(tok[3] || 0))));
           this.pc++; break;
-
         case OP.LDRSW: {
           const addr = regs.readInt(tok[2]) + BigInt(tok[3] || 0);
           let w = 0n;
@@ -586,16 +444,13 @@
           regs.writeInt(tok[1], BigInt.asIntN(32, w));
           this.pc++; break;
         }
-
         case OP.STRB:
           regs.memWriteByte(regs.readInt(tok[2]) + BigInt(tok[3] || 0),
             regs.readInt(tok[1]) & 0xffn);
           this.pc++; break;
-
         case OP.STRH:
           regs.memWriteHalf(regs.readInt(tok[2]) + BigInt(tok[3] || 0), regs.readInt(tok[1]));
           this.pc++; break;
-
         case OP.LDP: {
           const base = regs.readInt(tok[3]), off = BigInt(tok[4] || 0);
           regs.writeInt(tok[1], regs.memRead(base + off));
@@ -608,8 +463,6 @@
           regs.memWrite(base + off + 8n, regs.readInt(tok[2]));
           this.pc++; break;
         }
-
-        /* ── Arithmetic ───────────────────────────────────────── */
         case OP.ADD:
         case OP.ADDS: {
           const a = regs.readInt(tok[2]);
@@ -623,7 +476,6 @@
           }
           this.pc++; break;
         }
-
         case OP.SUB:
         case OP.SUBS: {
           const a = regs.readInt(tok[2]);
@@ -637,11 +489,9 @@
           }
           this.pc++; break;
         }
-
         case OP.MUL:
           regs.writeInt(tok[1], regs.readInt(tok[2]) * regs.readInt(tok[3]));
           this.pc++; break;
-
         case OP.UDIV: {
           const a = BigInt.asUintN(64, regs.readInt(tok[2]));
           const b = BigInt.asUintN(64, regs.readInt(tok[3]));
@@ -654,8 +504,6 @@
           regs.writeInt(tok[1], b === 0n ? 0n : a / b);
           this.pc++; break;
         }
-
-        /* ── Logical ──────────────────────────────────────────── */
         case OP.AND:
         case OP.ANDS: {
           const a = regs.readInt(tok[2]);
@@ -684,8 +532,6 @@
           setNZ(regs, res);
           this.pc++; break;
         }
-
-        /* ── Shifts ───────────────────────────────────────────── */
         case OP.LSL: {
           const sh = tok[3] === 'R' ? (regs.readInt(tok[4]) & 63n) : BigInt(tok[4]);
           regs.writeInt(tok[1], BigInt.asUintN(64, regs.readInt(tok[2])) << sh);
@@ -709,8 +555,6 @@
           regs.writeInt(tok[1], s === 0n ? a : (a >> s) | (a << (64n - s)));
           this.pc++; break;
         }
-
-        /* ── Compare / Test ───────────────────────────────────── */
         case OP.CMP: {
           const b = tok[2] === 'R' ? regs.readInt(tok[3]) : BigInt(tok[3]);
           subWithFlags(regs, regs.readInt(tok[1]), b);
@@ -726,8 +570,6 @@
           setNZ(regs, regs.readInt(tok[1]) & b);
           this.pc++; break;
         }
-
-        /* ── Negate / Carry / Overflow ────────────────────────── */
         case OP.NEG:
           regs.writeInt(tok[1], -regs.readInt(tok[2]));
           this.pc++; break;
@@ -751,15 +593,12 @@
             regs.readInt(tok[2]) - regs.readInt(tok[3]) - (regs.C ? 0n : 1n));
           this.pc++; break;
         case OP.SBCS: {
-          // SBC: result = a - b - ~C = a + ~b + C
           const r = addWithFlags(regs, regs.readInt(tok[2]),
                                   ~regs.readInt(tok[3]) & U64_MASK,
                                   regs.C ? 1n : 0n);
           regs.writeInt(tok[1], r);
           this.pc++; break;
         }
-
-        /* ── Multiply-accumulate ──────────────────────────────── */
         case OP.MADD:
           regs.writeInt(tok[1],
             regs.readInt(tok[2]) * regs.readInt(tok[3]) + regs.readInt(tok[4]));
@@ -803,8 +642,6 @@
           regs.writeInt(tok[1],
             regs.readInt(tok[4]) - BigInt.asUintN(32, regs.readInt(tok[2])) * BigInt.asUintN(32, regs.readInt(tok[3])));
           this.pc++; break;
-
-        /* ── Branches ─────────────────────────────────────────── */
         case OP.B:   this.pc = Number(tok[1]); break;
         case OP.BL:
           regs.lr = BigInt(this.pc + 1);
@@ -818,7 +655,6 @@
           this.pc = Number(regs.readInt(tok[1]));
           break;
         case OP.RET: {
-          // tok.length > 1 means an explicit return-address register was given
           const retAddr = tok.length > 1 ? regs.readInt(tok[1]) : regs.lr;
           if (this.callStack.length > 0) {
             this.pc = this.callStack.pop();
@@ -828,8 +664,6 @@
           }
           break;
         }
-
-        /* Conditional branches — all use the same pattern */
         case OP.BEQ: this.pc = regs.Z              ? Number(tok[1]) : this.pc + 1; break;
         case OP.BNE: this.pc = !regs.Z             ? Number(tok[1]) : this.pc + 1; break;
         case OP.BLT: this.pc = (regs.N !== regs.V) ? Number(tok[1]) : this.pc + 1; break;
@@ -845,7 +679,6 @@
         case OP.BVS: this.pc = regs.V              ? Number(tok[1]) : this.pc + 1; break;
         case OP.BVC: this.pc = !regs.V             ? Number(tok[1]) : this.pc + 1; break;
         case OP.BAL: this.pc = Number(tok[1]); break;
-
         case OP.CBZ:  this.pc = regs.readInt(tok[1]) === 0n ? Number(tok[2]) : this.pc + 1; break;
         case OP.CBNZ: this.pc = regs.readInt(tok[1]) !== 0n ? Number(tok[2]) : this.pc + 1; break;
         case OP.TBZ: {
@@ -858,30 +691,27 @@
           this.pc = ((regs.readInt(tok[1]) >> b) & 1n) !== 0n ? Number(tok[3]) : this.pc + 1;
           break;
         }
-
         case OP.ADR:
         case OP.ADRP:
           regs.writeInt(tok[1], BigInt(Number(tok[2])));
           this.pc++; break;
-
-        /* ── SVC (system call) ────────────────────────────────── */
         case OP.SVC: {
-          const no = Number(regs.readInt('0:8'));  // syscall number in x8
+          const no = Number(regs.readInt('0:8'));
           switch (no) {
-            case 1:    // write (stdout)
-            case 64: { // write (AArch64 Linux)
+            case 1:
+            case 64: {
               const s = regs.readStr('0:1');
               this.emit(s !== null ? s : regs.readInt('0:1').toString());
               break;
             }
-            case 63: { // read (AArch64 Linux)
+            case 63: {
               const line = await this.readLine();
               regs.writeStr('0:0', line);
               regs.writeInt('0:0', BigInt(line.length));
               break;
             }
-            case 60:   // exit
-            case 93:   // exit_group
+            case 60:
+            case 93:
               this.running = false;
               break;
             default:
@@ -890,25 +720,18 @@
           }
           this.pc++; break;
         }
-
-        /* ── Halt / Break ─────────────────────────────────────── */
         case OP.HLT:
         case OP.BRK:
           this.running = false;
           this.pc++; break;
-
-        /* ── No-ops / privileged stubs ────────────────────────── */
         case OP.NOP: case OP.WFE: case OP.WFI: case OP.SEV: case OP.SEVL:
         case OP.ISB: case OP.DSB: case OP.DMB: case OP.CLREX: case OP.YIELD:
         case OP.ERET: case OP.DRPS:
           this.pc++; break;
-
         case OP.MRS: regs.writeInt(tok[1], 0n); this.pc++; break;
         case OP.MSR: case OP.SYS: case OP.SYSL:
         case OP.IC:  case OP.DC:  case OP.AT:   case OP.TLBI:
           this.pc++; break;
-
-        /* ── Bit ops ──────────────────────────────────────────── */
         case OP.CLZ:   regs.writeInt(tok[1], clz64(regs.readInt(tok[2]))); this.pc++; break;
         case OP.CLS:   regs.writeInt(tok[1], cls64(regs.readInt(tok[2]))); this.pc++; break;
         case OP.RBIT:  regs.writeInt(tok[1], rbit64(regs.readInt(tok[2]))); this.pc++; break;
@@ -916,7 +739,6 @@
         case OP.REV16: regs.writeInt(tok[1], rev16in64(regs.readInt(tok[2]))); this.pc++; break;
         case OP.REV32: regs.writeInt(tok[1], rev32in64(regs.readInt(tok[2]))); this.pc++; break;
         case OP.REV64: regs.writeInt(tok[1], rev64(regs.readInt(tok[2]))); this.pc++; break;
-
         case OP.EXTR: {
           const n   = BigInt.asUintN(64, regs.readInt(tok[2]));
           const m   = BigInt.asUintN(64, regs.readInt(tok[3]));
@@ -924,8 +746,6 @@
           regs.writeInt(tok[1], ((n << 64n) | m) >> lsb);
           this.pc++; break;
         }
-
-        /* ── Bitfield ─────────────────────────────────────────── */
         case OP.SBFM: {
           const src = regs.readInt(tok[2]), immR = BigInt(tok[3]), immS = BigInt(tok[4]);
           const width = immS + 1n;
@@ -982,15 +802,11 @@
           regs.writeInt(tok[1], (regs.readInt(tok[1]) & ~mask) | (f << lsb));
           this.pc++; break;
         }
-
-        /* ── Sign/Zero extension ──────────────────────────────── */
         case OP.SXTB: regs.writeInt(tok[1], BigInt.asIntN(8,  regs.readInt(tok[2]))); this.pc++; break;
         case OP.SXTH: regs.writeInt(tok[1], BigInt.asIntN(16, regs.readInt(tok[2]))); this.pc++; break;
         case OP.SXTW: regs.writeInt(tok[1], BigInt.asIntN(32, regs.readInt(tok[2]))); this.pc++; break;
         case OP.UXTB: regs.writeInt(tok[1], BigInt.asUintN(8,  regs.readInt(tok[2]))); this.pc++; break;
         case OP.UXTH: regs.writeInt(tok[1], BigInt.asUintN(16, regs.readInt(tok[2]))); this.pc++; break;
-
-        /* ── Floating-point ───────────────────────────────────── */
         case OP.FMOV: {
           if (tok[2] === 'R') {
             if (regs.isFloat(tok[3])) regs.writeFloat(tok[1], regs.readFloat(tok[3]));
@@ -1007,7 +823,6 @@
         case OP.FABS:  regs.writeFloat(tok[1], Math.abs(regs.readFloat(tok[2]))); this.pc++; break;
         case OP.FNEG:  regs.writeFloat(tok[1], -regs.readFloat(tok[2])); this.pc++; break;
         case OP.FSQRT: regs.writeFloat(tok[1], Math.sqrt(regs.readFloat(tok[2]))); this.pc++; break;
-
         case OP.FCMP:
         case OP.FCMPE: {
           const a = regs.readFloat(tok[1]);
@@ -1015,7 +830,7 @@
           const nan = isNaN(a) || isNaN(b);
           regs.Z = !nan && a === b;
           regs.N = !nan && a < b;
-          regs.C = nan || a >= b;  // unordered sets C=1, V=1
+          regs.C = nan || a >= b;
           regs.V = nan;
           this.pc++; break;
         }
@@ -1039,7 +854,6 @@
             evalCond(tok[4], regs) ? regs.readFloat(tok[2]) : regs.readFloat(tok[3]));
           this.pc++; break;
         case OP.FCVT:  regs.writeFloat(tok[1], regs.readFloat(tok[2])); this.pc++; break;
-
         case OP.FCVTAS: regs.writeInt(tok[1], BigInt(Math.round(regs.readFloat(tok[2])))); this.pc++; break;
         case OP.FCVTAU: regs.writeInt(tok[1], BigInt(Math.abs(Math.round(regs.readFloat(tok[2]))))); this.pc++; break;
         case OP.FCVTMS: regs.writeInt(tok[1], BigInt(Math.floor(regs.readFloat(tok[2])))); this.pc++; break;
@@ -1052,7 +866,6 @@
         case OP.FCVTZU: regs.writeInt(tok[1], BigInt(Math.abs(Math.trunc(regs.readFloat(tok[2]))))); this.pc++; break;
         case OP.SCVTF:  regs.writeFloat(tok[1], Number(BigInt.asIntN(64, regs.readInt(tok[2])))); this.pc++; break;
         case OP.UCVTF:  regs.writeFloat(tok[1], Number(BigInt.asUintN(64, regs.readInt(tok[2])))); this.pc++; break;
-
         case OP.FMADD:  regs.writeFloat(tok[1],  regs.readFloat(tok[2]) * regs.readFloat(tok[3]) + regs.readFloat(tok[4])); this.pc++; break;
         case OP.FMSUB:  regs.writeFloat(tok[1], -(regs.readFloat(tok[2]) * regs.readFloat(tok[3])) + regs.readFloat(tok[4])); this.pc++; break;
         case OP.FNMADD: regs.writeFloat(tok[1], -(regs.readFloat(tok[2]) * regs.readFloat(tok[3]) + regs.readFloat(tok[4]))); this.pc++; break;
@@ -1061,8 +874,6 @@
         case OP.FMAX:   regs.writeFloat(tok[1], Math.max(regs.readFloat(tok[2]), regs.readFloat(tok[3]))); this.pc++; break;
         case OP.FMINNM: regs.writeFloat(tok[1], Math.min(regs.readFloat(tok[2]), regs.readFloat(tok[3]))); this.pc++; break;
         case OP.FMAXNM: regs.writeFloat(tok[1], Math.max(regs.readFloat(tok[2]), regs.readFloat(tok[3]))); this.pc++; break;
-
-        /* ── Conditional select ───────────────────────────────── */
         case OP.CSEL:  regs.writeInt(tok[1], evalCond(tok[4], regs) ? regs.readInt(tok[2]) : regs.readInt(tok[3])); this.pc++; break;
         case OP.CSINC: regs.writeInt(tok[1], evalCond(tok[4], regs) ? regs.readInt(tok[2]) : regs.readInt(tok[3]) + 1n); this.pc++; break;
         case OP.CSINV: regs.writeInt(tok[1], evalCond(tok[4], regs) ? regs.readInt(tok[2]) : ~regs.readInt(tok[3])); this.pc++; break;
@@ -1072,15 +883,11 @@
         case OP.CINC: { const v = regs.readInt(tok[2]); regs.writeInt(tok[1], evalCond(tok[3], regs) ? v + 1n : v); this.pc++; break; }
         case OP.CINV: { const v = regs.readInt(tok[2]); regs.writeInt(tok[1], evalCond(tok[3], regs) ? ~v : v); this.pc++; break; }
         case OP.CNEG: { const v = regs.readInt(tok[2]); regs.writeInt(tok[1], evalCond(tok[3], regs) ? -v : v); this.pc++; break; }
-
-        /* ── CCMP / CCMN ──────────────────────────────────────── */
         case OP.CCMP: {
           if (evalCond(tok[4], regs)) {
             const b = tok[2] === 'R' ? regs.readInt(tok[3]) : BigInt(tok[3]);
             subWithFlags(regs, regs.readInt(tok[1]), b);
           } else {
-            // Condition false: load NZCV from the immediate field (tok[4] is the condition;
-            // the NZCV immediate is in tok[3] when operand 2 is an immediate)
             const n = Number(tok[3]);
             regs.N = !!(n & 8); regs.Z = !!(n & 4); regs.C = !!(n & 2); regs.V = !!(n & 1);
           }
@@ -1096,20 +903,17 @@
           }
           this.pc++; break;
         }
-
-        /* ── Atomic / exclusive (simulated single-threaded) ───── */
         case OP.LDAR: case OP.LDAXR: case OP.LDXR:
           regs.writeInt(tok[1], regs.memRead(regs.readInt(tok[2]))); this.pc++; break;
         case OP.LDARB: case OP.LDAXRB: case OP.LDXRB:
           regs.writeInt(tok[1], regs.memReadByte(regs.readInt(tok[2]))); this.pc++; break;
         case OP.LDARH: case OP.LDAXRH: case OP.LDXRH:
           regs.writeInt(tok[1], regs.memReadHalf(regs.readInt(tok[2]))); this.pc++; break;
-
         case OP.STLR: case OP.STXR: case OP.STLXR: {
           const sidx = op === OP.STLR ? 1 : 2;
           const bidx = op === OP.STLR ? 2 : 3;
           regs.memWrite(regs.readInt(tok[bidx]), regs.readInt(tok[sidx]));
-          if (op !== OP.STLR) regs.writeInt(tok[1], 0n);  // success status
+          if (op !== OP.STLR) regs.writeInt(tok[1], 0n);
           this.pc++; break;
         }
         case OP.STLRB: case OP.STXRB: case OP.STLXRB: {
@@ -1139,13 +943,10 @@
           regs.writeInt(tok[1], 0n);
           this.pc++; break;
         }
-
         case OP.PRFM: case OP.PRFUM: this.pc++; break;
         case OP.LDRAA: case OP.LDRAB:
           regs.writeInt(tok[1], regs.memRead(regs.readInt(tok[2]) + BigInt(tok[3] || 0)));
           this.pc++; break;
-
-        /* ── Stack helpers (VM pseudo-ops) ────────────────────── */
         case OP.PUSH:
           regs.stack.push({ val: regs.readInt(tok[1]), str: regs.readStr(tok[1]) });
           this.pc++; break;
@@ -1153,12 +954,10 @@
           const item = regs.stack.pop();
           if (item !== undefined) {
             regs.writeInt(tok[1], item.val);
-            regs.writeStr(tok[1], item.str);  // null clears string — writeStr handles that
+            regs.writeStr(tok[1], item.str);
           }
           this.pc++; break;
         }
-
-        /* ── Swap ─────────────────────────────────────────────── */
         case OP.SWP: {
           const a = regs.readInt(tok[1]), b = regs.readInt(tok[2]);
           const sa = regs.readStr(tok[1]), sb = regs.readStr(tok[2]);
@@ -1166,26 +965,19 @@
           regs.writeInt(tok[2], a); regs.writeStr(tok[2], sa);
           this.pc++; break;
         }
-
-        /* ── Debug dump ───────────────────────────────────────── */
         case OP.DMP: {
           const v = regs.readInt(tok[1]), s = regs.readStr(tok[1]);
           this.emitErr(`[DMP ${tok[1]}] int=${v} str=${JSON.stringify(s)}`);
           this.pc++; break;
         }
-
-        /* ── HALT ─────────────────────────────────────────────── */
         case OP.HALT:
           this.running = false;
           break;
-
-        /* ── High-level I/O opcodes ───────────────────────────── */
         case OP.PUTS: {
           const s = regs.readStr(tok[1]);
           this.emit(s !== null ? s : regs.readInt(tok[1]).toString());
           this.pc++; break;
         }
-
         case OP.GETI: {
           const line    = await this.readLine();
           const trimmed = (line || '').trim();
@@ -1193,22 +985,18 @@
           regs.writeInt(tok[1], BigInt(isNaN(parsed) ? 0 : parsed));
           this.pc++; break;
         }
-
         case OP.GETS: {
           const line = await this.readLine();
           regs.writeStr(tok[1], line);
           regs.writeInt(tok[1], BigInt(line.length));
           this.pc++; break;
         }
-
         case OP.RAND:
           regs.writeInt(tok[1], BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)));
           this.pc++; break;
         case OP.TIME:
           regs.writeInt(tok[1], BigInt(Date.now()));
           this.pc++; break;
-
-        /* ── Register utilities ───────────────────────────────── */
         case OP.CLRR:
           regs.writeInt(tok[1], 0n);
           regs.writeStr(tok[1], null);
@@ -1231,7 +1019,6 @@
           this.pc++; break;
         }
         case OP.MOD: {
-          // Truncated-division semantics, matching C's % operator
           const a = regs.readInt(tok[2]), b = regs.readInt(tok[3]);
           regs.writeInt(tok[1], b === 0n ? 0n : a % b);
           this.pc++; break;
@@ -1239,8 +1026,6 @@
         case OP.NOT: regs.writeInt(tok[1], ~regs.readInt(tok[1])); this.pc++; break;
         case OP.SHL: regs.writeInt(tok[1], BigInt.asUintN(64, regs.readInt(tok[1])) << BigInt(tok[2])); this.pc++; break;
         case OP.SHR: regs.writeInt(tok[1], BigInt.asUintN(64, regs.readInt(tok[1])) >> BigInt(tok[2])); this.pc++; break;
-
-        /* ── Memory / string ops ──────────────────────────────── */
         case OP.MEMCPY: {
           const len = Number(regs.readInt(tok[3]));
           const src = regs.readStr(tok[2]);
@@ -1289,7 +1074,6 @@
           this.pc++; break;
         }
         case OP.ATOI: {
-          // Mirrors C atoi: parse leading integer, ignore trailing garbage
           const raw = (regs.readStr(tok[2]) ?? '0').trim();
           const m   = raw.match(/^-?\d+/);
           try {
@@ -1299,8 +1083,6 @@
           }
           this.pc++; break;
         }
-
-        /* ── High-level call/jump ─────────────────────────────── */
         case OP.CALL:
           regs.lr = BigInt(this.pc + 1);
           this.callStack.push(this.pc + 1);
@@ -1313,16 +1095,12 @@
         case OP.JLE: this.pc = (regs.Z || regs.N !== regs.V) ? Number(tok[1]) : this.pc + 1; break;
         case OP.JGT: this.pc = (!regs.Z && regs.N === regs.V) ? Number(tok[1]) : this.pc + 1; break;
         case OP.JGE: this.pc = (regs.N === regs.V) ? Number(tok[1]) : this.pc + 1; break;
-
-        /* ── Data directives (no-ops at runtime) ─────────────── */
         case OP.ALIGN: case OP.WORD: case OP.DWORD: case OP.BYTE_D:
         case OP.SPACE: case OP.ASCII: case OP.ASCIZ:
           this.pc++; break;
-
         case OP.LDR_LIT:
           regs.writeInt(tok[1], BigInt(tok[2] || 0));
           this.pc++; break;
-
         default:
           this.emitErr(`[VM] Unknown opcode ${op} at pc=${this.pc}`);
           this.pc++;
@@ -1332,50 +1110,595 @@
   }
 
   /* =========================================================
+   * Internal helpers — encoding strings for the register file
+   * ========================================================= */
+
+  /**
+   * Converts a user-facing register name into the internal "family:number" encoding.
+   *
+   * Supported names (case-insensitive):
+   *   x0–x30       → "0:N"    (64-bit GPR)
+   *   w0–w30       → "1:N"    (32-bit GPR, zero-extended)
+   *   sp           → "2:0"    (stack pointer)
+   *   lr / x30     → "3:0"    (link register, also aliased as x30)
+   *   xzr / wzr    → "4:0"    (zero register)
+   *   fp / x29     → "7:0"    (frame pointer)
+   *   ip0 / x16    → "8:0"
+   *   ip1 / x17    → "9:0"
+   *   d0–d31       → "10:N"   (64-bit float)
+   *   s0–s31       → "11:N"   (32-bit float)
+   *   0–30 (bare)  → "0:N"    (shorthand for xN)
+   *
+   * @param {string|number} name
+   * @returns {string} encoding
+   * @throws {Error} on unrecognised register name
+   */
+  function encodeRegName(name) {
+    if (typeof name === 'number') return `0:${name}`;
+    const n = String(name).toLowerCase().trim();
+    if (n === 'sp')  return '2:0';
+    if (n === 'lr')  return '3:0';
+    if (n === 'fp')  return '7:0';
+    if (n === 'xzr' || n === 'wzr') return '4:0';
+    if (n === 'ip0') return '8:0';
+    if (n === 'ip1') return '9:0';
+    const xm = n.match(/^x(\d+)$/);  if (xm) return `0:${xm[1]}`;
+    const wm = n.match(/^w(\d+)$/);  if (wm) return `1:${wm[1]}`;
+    const dm = n.match(/^d(\d+)$/);  if (dm) return `10:${dm[1]}`;
+    const sm = n.match(/^s(\d+)$/);  if (sm) return `11:${sm[1]}`;
+    const nm = n.match(/^\d+$/);     if (nm) return `0:${n}`;
+    throw new Error(`[webassembler] Unknown register name: "${name}"`);
+  }
+
+  /* =========================================================
    * Public API
+   * ========================================================= */
+
+  /**
+   * The live VM instance, set during execute() so that introspection
+   * namespaces (reg, mem, flags, dbg) can reach it mid-execution or
+   * after execution.
+   */
+  let _liveVM = null;
+
+  function _requireVM() {
+    if (!_liveVM) throw new Error('[webassembler] No active or completed VM — call execute() first.');
+    return _liveVM;
+  }
+
+  /* ---------------------------------------------------------
+   * webassembler.reg
+   * Register introspection and manipulation.
+   * Works during and after execute().
+   * --------------------------------------------------------- */
+  const reg = {
+    /**
+     * Fetch the integer value of a general-purpose register.
+     * Returns a BigInt.
+     *
+     * @param {string|number} name  Register name or number (e.g. 0, "x0", "w3", "sp", "lr")
+     * @returns {bigint}
+     *
+     * @example
+     * webassembler.reg.fetch(0);        // x0
+     * webassembler.reg.fetch('x5');     // x5
+     * webassembler.reg.fetch('sp');     // stack pointer
+     * webassembler.reg.fetch('lr');     // link register
+     */
+    fetch(name) {
+      return _requireVM().regs.readInt(encodeRegName(name));
+    },
+
+    /**
+     * Fetch the integer value of a register as a plain JS Number.
+     * Loses precision for values outside ±2^53, but convenient for small integers.
+     *
+     * @param {string|number} name
+     * @returns {number}
+     */
+    fetchNum(name) {
+      return Number(_requireVM().regs.readInt(encodeRegName(name)));
+    },
+
+    /**
+     * Fetch the floating-point value of a SIMD/FP register.
+     *
+     * @param {string|number} name  e.g. "d0", "s3", or a bare number (treated as dN)
+     * @returns {number}
+     *
+     * @example
+     * webassembler.reg.fetchFloat('d0');   // d0
+     * webassembler.reg.fetchFloat('s2');   // s2 (single-precision)
+     */
+    fetchFloat(name) {
+      const enc = typeof name === 'number' ? `10:${name}` : encodeRegName(name);
+      return _requireVM().regs.readFloat(enc);
+    },
+
+    /**
+     * Fetch the string value stored in a register (set by LDS / GETS / STRCPY etc.).
+     * Returns null if no string is associated with that register.
+     *
+     * @param {string|number} name
+     * @returns {string|null}
+     */
+    fetchStr(name) {
+      return _requireVM().regs.readStr(encodeRegName(name));
+    },
+
+    /**
+     * Write an integer value to a general-purpose register.
+     *
+     * @param {string|number} name
+     * @param {bigint|number} value
+     */
+    set(name, value) {
+      _requireVM().regs.writeInt(encodeRegName(name), typeof value === 'bigint' ? value : BigInt(Math.trunc(value)));
+    },
+
+    /**
+     * Write a floating-point value to a SIMD/FP register.
+     *
+     * @param {string|number} name  e.g. "d1", "s0"
+     * @param {number}        value
+     */
+    setFloat(name, value) {
+      const enc = typeof name === 'number' ? `10:${name}` : encodeRegName(name);
+      _requireVM().regs.writeFloat(enc, value);
+    },
+
+    /**
+     * Write a string to a register's string slot (also updates the integer
+     * slot to the string's length, mirroring what LDS does).
+     *
+     * @param {string|number} name
+     * @param {string}        value
+     */
+    setStr(name, value) {
+      const vm = _requireVM();
+      const enc = encodeRegName(name);
+      vm.regs.writeStr(enc, value);
+      vm.regs.writeInt(enc, BigInt(value.length));
+    },
+
+    /**
+     * Return a snapshot of all 31 general-purpose registers (x0–x30)
+     * as an array of BigInts.
+     *
+     * @returns {bigint[]}
+     */
+    snapshot() {
+      const regs = _requireVM().regs;
+      return Array.from({ length: 31 }, (_, i) => regs.x[i] ?? 0n);
+    },
+
+    /**
+     * Return a human-readable summary of all registers as a plain object.
+     * Integer values are formatted as decimal strings (to preserve BigInt precision).
+     * Registers with an associated string value include a `str` field.
+     *
+     * @returns {object}
+     */
+    dump() {
+      const vm    = _requireVM();
+      const regs  = vm.regs;
+      const out   = { pc: vm.pc, sp: regs.sp.toString(), lr: regs.lr.toString(), gpr: {}, fpr: {} };
+      for (let i = 0; i < 31; i++) {
+        const enc = `0:${i}`;
+        const entry = { value: (regs.x[i] ?? 0n).toString() };
+        const s = regs.readStr(enc);
+        if (s !== null) entry.str = s;
+        out.gpr[`x${i}`] = entry;
+      }
+      for (let i = 0; i < 32; i++) {
+        out.fpr[`d${i}`] = regs.d[i] ?? 0.0;
+      }
+      return out;
+    },
+
+    /**
+     * Return the current program counter.
+     * @returns {number}
+     */
+    pc() {
+      return _requireVM().pc;
+    },
+
+    /**
+     * Return the current stack pointer value.
+     * @returns {bigint}
+     */
+    sp() {
+      return _requireVM().regs.sp;
+    },
+
+    /**
+     * Return the current link register value.
+     * @returns {bigint}
+     */
+    lr() {
+      return _requireVM().regs.lr;
+    },
+
+    /**
+     * Return a copy of the VM-level pseudo stack (PUSH/POP items).
+     * Each item is { val: bigint, str: string|null }.
+     *
+     * @returns {Array<{val: bigint, str: string|null}>}
+     */
+    stack() {
+      return [..._requireVM().regs.stack];
+    },
+
+    /**
+     * Return the call-return stack (raw PC indices).
+     * @returns {number[]}
+     */
+    callStack() {
+      return [..._requireVM().callStack];
+    },
+
+    /**
+     * Resolve a user-friendly name to its internal encoding string.
+     * Useful for low-level tooling that needs to call Registers methods directly.
+     *
+     * @param {string|number} name
+     * @returns {string}
+     */
+    encode(name) {
+      return encodeRegName(name);
+    },
+  };
+
+  /* ---------------------------------------------------------
+   * webassembler.mem
+   * Memory introspection and direct read/write.
+   * --------------------------------------------------------- */
+  const mem = {
+    /**
+     * Read a 64-bit word from an 8-byte-aligned byte address.
+     * Returns a BigInt (signed 64-bit).
+     *
+     * @param {bigint|number} addr  Must be 8-byte aligned.
+     * @returns {bigint}
+     */
+    read(addr) {
+      return _requireVM().regs.memRead(BigInt(addr));
+    },
+
+    /**
+     * Read a single byte from any byte address.
+     * @param {bigint|number} addr
+     * @returns {bigint}  0n–255n
+     */
+    readByte(addr) {
+      return _requireVM().regs.memReadByte(BigInt(addr));
+    },
+
+    /**
+     * Read a 16-bit little-endian halfword.
+     * @param {bigint|number} addr
+     * @returns {bigint}
+     */
+    readHalf(addr) {
+      return _requireVM().regs.memReadHalf(BigInt(addr));
+    },
+
+    /**
+     * Read a 32-bit little-endian word from any byte address.
+     * @param {bigint|number} addr
+     * @returns {bigint}
+     */
+    readWord(addr) {
+      const a = BigInt(addr);
+      const regs = _requireVM().regs;
+      let w = 0n;
+      for (let i = 0n; i < 4n; i++) w |= regs.memReadByte(a + i) << (i * 8n);
+      return w;
+    },
+
+    /**
+     * Write a 64-bit value to an 8-byte-aligned address.
+     * @param {bigint|number} addr
+     * @param {bigint|number} value
+     */
+    write(addr, value) {
+      _requireVM().regs.memWrite(BigInt(addr), BigInt(value));
+    },
+
+    /**
+     * Write a single byte to any byte address.
+     * @param {bigint|number} addr
+     * @param {bigint|number} value  Only the low 8 bits are stored.
+     */
+    writeByte(addr, value) {
+      _requireVM().regs.memWriteByte(BigInt(addr), BigInt(value));
+    },
+
+    /**
+     * Write a 16-bit little-endian halfword.
+     * @param {bigint|number} addr
+     * @param {bigint|number} value
+     */
+    writeHalf(addr, value) {
+      _requireVM().regs.memWriteHalf(BigInt(addr), BigInt(value));
+    },
+
+    /**
+     * Read a null-terminated ASCII string from memory starting at `addr`.
+     * Reads byte by byte until a 0x00 byte or `maxLen` bytes are consumed.
+     *
+     * @param {bigint|number} addr
+     * @param {number}        [maxLen=1024]
+     * @returns {string}
+     */
+    readCString(addr, maxLen = 1024) {
+      const regs = _requireVM().regs;
+      let a = BigInt(addr), out = '';
+      for (let i = 0; i < maxLen; i++) {
+        const b = Number(regs.memReadByte(a++));
+        if (b === 0) break;
+        out += String.fromCharCode(b);
+      }
+      return out;
+    },
+
+    /**
+     * Write a JS string into memory as null-terminated ASCII, starting at `addr`.
+     * @param {bigint|number} addr
+     * @param {string}        str
+     */
+    writeCString(addr, str) {
+      const regs = _requireVM().regs;
+      let a = BigInt(addr);
+      for (let i = 0; i < str.length; i++) {
+        regs.memWriteByte(a++, BigInt(str.charCodeAt(i) & 0xff));
+      }
+      regs.memWriteByte(a, 0n);  // null terminator
+    },
+
+    /**
+     * Read `count` consecutive 64-bit words starting at `addr` (8-byte steps).
+     * @param {bigint|number} addr
+     * @param {number}        count
+     * @returns {bigint[]}
+     */
+    readWords(addr, count) {
+      const regs = _requireVM().regs;
+      const a = BigInt(addr);
+      return Array.from({ length: count }, (_, i) => regs.memRead(a + BigInt(i) * 8n));
+    },
+
+    /**
+     * Write an array of BigInt values as consecutive 64-bit words starting at `addr`.
+     * @param {bigint|number} addr
+     * @param {bigint[]}      values
+     */
+    writeWords(addr, values) {
+      const regs = _requireVM().regs;
+      let a = BigInt(addr);
+      for (const v of values) { regs.memWrite(a, BigInt(v)); a += 8n; }
+    },
+
+    /**
+     * Return a Map of all written memory locations.
+     * Keys are byte-address strings, values are BigInts.
+     * The returned Map is a shallow copy — mutations do not affect the VM.
+     *
+     * @returns {Map<string, bigint>}
+     */
+    dump() {
+      return new Map(_requireVM().regs.mem);
+    },
+
+    /**
+     * Return how many 64-bit words have been written to memory.
+     * @returns {number}
+     */
+    size() {
+      return _requireVM().regs.mem.size;
+    },
+
+    /**
+     * Clear all memory (useful for test harnesses between runs on the same VM).
+     */
+    clear() {
+      _requireVM().regs.mem.clear();
+    },
+  };
+
+  /* ---------------------------------------------------------
+   * webassembler.flags
+   * NZCV flag read/write.
+   * --------------------------------------------------------- */
+  const flags = {
+    /**
+     * Return a snapshot of all four condition flags.
+     * @returns {{ N: boolean, Z: boolean, C: boolean, V: boolean }}
+     */
+    get() {
+      const r = _requireVM().regs;
+      return { N: r.N, Z: r.Z, C: r.C, V: r.V };
+    },
+
+    /**
+     * Overwrite one or more condition flags.
+     * Only the keys you supply are changed.
+     * @param {{ N?: boolean, Z?: boolean, C?: boolean, V?: boolean }} patch
+     */
+    set(patch) {
+      const r = _requireVM().regs;
+      if ('N' in patch) r.N = !!patch.N;
+      if ('Z' in patch) r.Z = !!patch.Z;
+      if ('C' in patch) r.C = !!patch.C;
+      if ('V' in patch) r.V = !!patch.V;
+    },
+
+    /** @returns {boolean} Negative flag */
+    N() { return _requireVM().regs.N; },
+    /** @returns {boolean} Zero flag */
+    Z() { return _requireVM().regs.Z; },
+    /** @returns {boolean} Carry flag */
+    C() { return _requireVM().regs.C; },
+    /** @returns {boolean} Overflow flag */
+    V() { return _requireVM().regs.V; },
+
+    /**
+     * Evaluate an AArch64 condition code against the current flags.
+     * @param {string} cond  e.g. "eq", "ne", "lt", "ge", "hi", "lo" …
+     * @returns {boolean}
+     */
+    eval(cond) {
+      return evalCond(cond, _requireVM().regs);
+    },
+
+    /**
+     * Return the 4-bit NZCV value packed as a number (bit 3=N, 2=Z, 1=C, 0=V).
+     * @returns {number}
+     */
+    nzcv() {
+      const r = _requireVM().regs;
+      return (r.N ? 8 : 0) | (r.Z ? 4 : 0) | (r.C ? 2 : 0) | (r.V ? 1 : 0);
+    },
+  };
+
+  /* ---------------------------------------------------------
+   * webassembler.dbg
+   * Debug and execution-tracing utilities.
+   * --------------------------------------------------------- */
+  const dbg = {
+    /**
+     * Return the instruction token array at a given PC index.
+     * Returns null if the index is out of range.
+     *
+     * @param {number} [pc]  Defaults to current PC.
+     * @returns {string[]|null}
+     */
+    instrAt(pc) {
+      const vm = _requireVM();
+      const idx = pc !== undefined ? pc : vm.pc;
+      return vm.code[idx] ?? null;
+    },
+
+    /**
+     * Return the total number of loaded instructions.
+     * @returns {number}
+     */
+    codeLen() {
+      return _requireVM().code.length;
+    },
+
+    /**
+     * Return a slice of instructions around the current PC for context.
+     * @param {number} [radius=3]  Lines before and after the current PC.
+     * @returns {Array<{pc: number, tokens: string[], current: boolean}>}
+     */
+    context(radius = 3) {
+      const vm  = _requireVM();
+      const cur = vm.pc;
+      const lo  = Math.max(0, cur - radius);
+      const hi  = Math.min(vm.code.length - 1, cur + radius);
+      return Array.from({ length: hi - lo + 1 }, (_, i) => ({
+        pc:      lo + i,
+        tokens:  vm.code[lo + i] ?? [],
+        current: lo + i === cur,
+      }));
+    },
+
+    /**
+     * Return whether the VM is still running (i.e. has not halted).
+     * @returns {boolean}
+     */
+    isRunning() {
+      return _requireVM().running;
+    },
+
+    /**
+     * Force-halt the running VM.  Useful from a timeout or external interrupt.
+     */
+    halt() {
+      _requireVM().running = false;
+    },
+
+    /**
+     * Execute exactly one instruction step from outside the VM loop.
+     * Returns false if the VM is already stopped or out of bounds.
+     *
+     * @returns {Promise<boolean>}
+     */
+    async step() {
+      const vm = _requireVM();
+      if (!vm.running || vm.pc < 0 || vm.pc >= vm.code.length) return false;
+      const instr = vm.code[vm.pc];
+      if (instr && instr.length > 0) await vm.step(instr);
+      return true;
+    },
+
+    /**
+     * Produce a concise human-readable string describing the current VM state.
+     * Useful for logging breakpoints.
+     *
+     * @returns {string}
+     */
+    stateStr() {
+      const vm = _requireVM();
+      const r  = vm.regs;
+      const nzcv = `N=${+r.N} Z=${+r.Z} C=${+r.C} V=${+r.V}`;
+      const gpr  = Array.from({ length: 8 }, (_, i) => `x${i}=${r.x[i] ?? 0n}`).join(' ');
+      return `pc=${vm.pc} sp=${r.sp} lr=${r.lr} [${nzcv}] ${gpr}`;
+    },
+
+    /**
+     * Attach a one-shot or persistent breakpoint callback that fires
+     * before every instruction step.  The callback receives the VM instance
+     * and the current token array.  Return `false` from the callback to
+     * detach it automatically.
+     *
+     * Because the VM loop runs asynchronously this works by wrapping the
+     * VM's internal step() method — call detach() on the returned handle
+     * to remove the hook cleanly.
+     *
+     * @param {function(vm: VM, tokens: string[]): boolean|void} cb
+     * @returns {{ detach: function }}
+     */
+    onStep(cb) {
+      const vm       = _requireVM();
+      const original = vm.step.bind(vm);
+      vm.step = async function (tok) {
+        const keep = cb(vm, tok);
+        if (keep === false) vm.step = original;
+        return original(tok);
+      };
+      return { detach() { vm.step = original; } };
+    },
+  };
+
+  /* =========================================================
+   * Public API object
    * ========================================================= */
   const api = {
     _code: null,
 
-    /**
-     * Called with text written to stdout.
-     * Override this to redirect output to your UI.
-     * @param {string} text
-     */
+    // ── Introspection namespaces ──────────────────────────────
+    /** Register introspection & manipulation. */
+    reg,
+    /** Memory introspection & manipulation. */
+    mem,
+    /** NZCV flag read/write & evaluation. */
+    flags,
+    /** Debug / step / tracing utilities. */
+    dbg,
+
+    // ── Callbacks ─────────────────────────────────────────────
     onOutput(text) { console.log(text); },
-
-    /**
-     * Called with diagnostic/error text written to stderr.
-     * Override this to redirect error output to your UI.
-     * @param {string} text
-     */
-    onError(text) { console.error(text); },
-
-    /**
-     * Called whenever the program reads a line of input (GETI / GETS / SVC read).
-     * Must return a Promise<string>.
-     *
-     * The default uses the browser's synchronous `prompt()`, wrapped in a Promise.
-     * Replace this with your own async UI hook for a better user experience:
-     *
-     *   webassembler.onInput = () => new Promise(resolve => {
-     *     // show an input field, call resolve(value) when submitted
-     *   });
-     *
-     * @returns {Promise<string>}
-     */
-    onInput() {
+    onError(text)  { console.error(text); },
+    onInput()      {
       return Promise.resolve(
         typeof prompt === 'function' ? (prompt('Input:') ?? '') : ''
       );
     },
 
-    /**
-     * Load and compile bytecode from a URL via fetch.
-     * @param {string}    url       - path or URL to the .wassm file
-     * @param {Function} [callback] - called with no arguments when ready
-     * @returns {Promise<void>}
-     */
+    // ── Loaders ───────────────────────────────────────────────
     init(url, callback) {
       return fetch(url)
         .then(r => {
@@ -1388,24 +1711,12 @@
         });
     },
 
-    /**
-     * Load bytecode from a raw source string (no network request).
-     * @param {string}    src       - .wassm source text
-     * @param {Function} [callback] - called asynchronously when ready
-     * @returns {Promise<void>}
-     */
     initFromString(src, callback) {
       this._code = parseWassm(src);
       if (typeof callback === 'function') Promise.resolve().then(callback);
       return Promise.resolve();
     },
 
-    /**
-     * Load bytecode from a File or Blob (e.g. from a file-picker).
-     * @param {File|Blob} file
-     * @param {Function} [callback]
-     * @returns {Promise<void>}
-     */
     initFromFile(file, callback) {
       return file.text().then(src => {
         this._code = parseWassm(src);
@@ -1413,13 +1724,14 @@
       });
     },
 
+    // ── Execution ─────────────────────────────────────────────
     /**
      * Execute the loaded bytecode.
-     * A fresh VM instance is created for each call, so state never leaks between runs.
+     * A fresh VM instance is created for each call, stored in _liveVM
+     * so that the reg/mem/flags/dbg namespaces can reach it.
      *
-     * @param {number} [yieldEvery=50000] - instructions between event-loop yields
-     * @returns {Promise<void>} resolves when the program halts
-     * @throws {Error} if no bytecode has been loaded
+     * @param {number} [yieldEvery=50000]
+     * @returns {Promise<void>}
      */
     execute(yieldEvery = 50_000) {
       if (!this._code) {
@@ -1430,13 +1742,11 @@
         onError:  (t) => this.onError(t),
         onInput:  ()  => this.onInput(),
       });
+      _liveVM = vm;
       return vm.run(yieldEvery);
     },
 
-    /**
-     * Returns a copy of the opcode table for introspection or tooling.
-     * @returns {object}
-     */
+    /** Returns a copy of the opcode table for introspection or tooling. */
     get opcodes() { return { ...OP }; },
   };
 
