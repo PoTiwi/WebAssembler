@@ -13,7 +13,7 @@ Some language implementations are currently being developed, while others are pl
 
 ## Contents
 
-- 🐥 - Ready for use
+- 🐥 - Ready for general use
   - (none)
 
 - 🐣 - In development, use with caution.
