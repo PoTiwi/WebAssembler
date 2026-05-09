@@ -27,6 +27,11 @@ a.iwa  →  [assembler]  →  a.wassm  →  [wlbi.js]  →  output
   - [Full browser example](#full-browser-example)
   - [Full Node.js example](#full-nodejs-example)
   - [Performance tuning](#performance-tuning)
+- [Introspection API](#introspection-api)
+  - [webassembler.reg — Registers](#webassemblerregg--registers)
+  - [webassembler.mem — Memory](#webassemblermem--memory)
+  - [webassembler.flags — NZCV Flags](#webassemblerflags--nzcv-flags)
+  - [webassembler.dbg — Debugging](#webassemblerdbg--debugging)
 - [Assembly Language Guide](#assembly-language-guide)
   - [Comments](#comments)
   - [Labels](#labels)
@@ -306,6 +311,251 @@ webassembler.execute(5_000);
 
 // Maximum throughput for batch/non-interactive programs
 webassembler.execute(500_000);
+```
+
+---
+
+## Introspection API
+
+After calling `execute()` (or mid-execution via `dbg.onStep`), the VM's internal state is accessible through four namespaces: `reg`, `mem`, `flags`, and `dbg`. These are useful for building debuggers, test harnesses, visualisers, or any tooling that needs to observe or manipulate a running program.
+
+All four namespaces throw if accessed before `execute()` has been called at least once.
+
+### `webassembler.reg` — Registers
+
+Read and write any register by its familiar assembly name (`"x0"`, `"sp"`, `"lr"`, `"d3"`, etc.) or by bare number (`0` is treated as `x0`).
+
+#### Reading
+
+```js
+// Read x0 as a BigInt (always exact, no precision loss)
+webassembler.reg.fetch('x0');        // → 42n
+webassembler.reg.fetch(0);           // same — bare number is shorthand for xN
+webassembler.reg.fetch('sp');        // → stack pointer value
+webassembler.reg.fetch('lr');        // → link register value
+
+// Read as a plain JS Number (convenient for small values)
+webassembler.reg.fetchNum('x1');     // → 42  (watch out above ±2^53)
+
+// Read a float register
+webassembler.reg.fetchFloat('d0');   // → 3.14
+webassembler.reg.fetchFloat('s2');   // → single-precision value
+
+// Read the string attached to a register (set by lds / gets / strcpy …)
+webassembler.reg.fetchStr('x0');     // → "Hello, World!" or null
+```
+
+#### Writing
+
+```js
+webassembler.reg.set('x0', 99n);          // write BigInt
+webassembler.reg.set('x0', 99);           // Number is accepted too
+webassembler.reg.setFloat('d0', 2.718);   // write float register
+webassembler.reg.setStr('x1', 'hello');   // write string (also sets length in integer slot)
+```
+
+#### Bulk / structural
+
+```js
+// Array of all 31 x-registers as BigInts
+webassembler.reg.snapshot();
+// → [0n, 42n, 0n, …]
+
+// Full human-readable dump — PC, SP, LR, every GPR and FPR
+webassembler.reg.dump();
+// → { pc: 7, sp: "0", lr: "0", gpr: { x0: { value: "42", str: "hi" }, … }, fpr: { d0: 3.14, … } }
+
+// Special-register shortcuts
+webassembler.reg.pc();         // → current program counter (number)
+webassembler.reg.sp();         // → stack pointer (BigInt)
+webassembler.reg.lr();         // → link register (BigInt)
+
+// VM pseudo-stack (PUSH / POP items)
+webassembler.reg.stack();      // → [{ val: 10n, str: null }, …]
+
+// Call-return stack (raw PC indices saved by bl / call)
+webassembler.reg.callStack();  // → [3, 17, …]
+```
+
+#### Low-level
+
+```js
+// Resolve any name to the internal "family:number" encoding
+webassembler.reg.encode('sp');    // → "2:0"
+webassembler.reg.encode('x5');   // → "0:5"
+webassembler.reg.encode('d0');   // → "10:0"
+```
+
+**Supported register names** (case-insensitive):
+
+| Name | Description |
+|---|---|
+| `x0`–`x30` or bare `0`–`30` | 64-bit general-purpose |
+| `w0`–`w30` | 32-bit view (zero-extended on write) |
+| `sp` | Stack pointer |
+| `lr` | Link register |
+| `fp` | Frame pointer (`x29`) |
+| `xzr` / `wzr` | Zero register |
+| `ip0` / `ip1` | Scratch registers (`x16` / `x17`) |
+| `d0`–`d31` | 64-bit float registers |
+| `s0`–`s31` | 32-bit float registers |
+
+---
+
+### `webassembler.mem` — Memory
+
+Direct access to the VM's byte-addressed memory. All addresses accept either `bigint` or `number`.
+
+#### Reading
+
+```js
+webassembler.mem.read(0n);           // 64-bit word at aligned address → BigInt
+webassembler.mem.readByte(4n);       // single byte → BigInt (0n–255n)
+webassembler.mem.readHalf(2n);       // 16-bit little-endian halfword → BigInt
+webassembler.mem.readWord(0n);       // 32-bit little-endian word → BigInt
+
+// Read a null-terminated ASCII string (up to 1024 bytes by default)
+webassembler.mem.readCString(0n);           // → "Hello"
+webassembler.mem.readCString(0n, 64);       // custom max length
+
+// Read N consecutive 64-bit words (8-byte steps)
+webassembler.mem.readWords(0n, 4);   // → [0n, 1n, 2n, 3n]
+```
+
+#### Writing
+
+```js
+webassembler.mem.write(0n, 0xDEADBEEFn);   // 64-bit word
+webassembler.mem.writeByte(4n, 0xFFn);     // single byte
+webassembler.mem.writeHalf(2n, 0x1234n);   // 16-bit halfword
+
+// Write a null-terminated ASCII string into memory
+webassembler.mem.writeCString(0n, "hello");
+
+// Write an array of BigInts as consecutive 64-bit words
+webassembler.mem.writeWords(0n, [1n, 2n, 3n]);
+```
+
+#### Inspection
+
+```js
+// Full snapshot of all written locations
+// Keys are byte-address strings, values are BigInts — mutations don't affect the VM
+webassembler.mem.dump();    // → Map { "0" => 42n, "8" => 7n, … }
+
+// Number of 64-bit words currently stored
+webassembler.mem.size();    // → 3
+
+// Wipe all memory (useful between test runs on the same VM instance)
+webassembler.mem.clear();
+```
+
+---
+
+### `webassembler.flags` — NZCV Flags
+
+Read and write the four AArch64 condition flags.
+
+```js
+// Read all four flags at once
+webassembler.flags.get();
+// → { N: false, Z: true, C: false, V: false }
+
+// Patch one or more flags (other flags are untouched)
+webassembler.flags.set({ Z: true, C: false });
+
+// Individual accessors
+webassembler.flags.N();    // → false  (Negative)
+webassembler.flags.Z();    // → true   (Zero)
+webassembler.flags.C();    // → false  (Carry)
+webassembler.flags.V();    // → false  (Overflow)
+
+// Evaluate an AArch64 condition code against the current flags
+webassembler.flags.eval('eq');   // → true  (Z is set)
+webassembler.flags.eval('lt');   // → false (N === V)
+webassembler.flags.eval('hi');   // → false (C && !Z)
+
+// Packed 4-bit value: bit3=N, bit2=Z, bit1=C, bit0=V
+webassembler.flags.nzcv();   // → 4  (0b0100 = Z only)
+```
+
+Condition codes accepted by `flags.eval()` are the same as those used in assembly: `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `lo`/`cc`, `ls`, `hi`, `hs`/`cs`, `mi`, `pl`, `vs`, `vc`, `al`.
+
+---
+
+### `webassembler.dbg` — Debugging
+
+Inspect and control execution, attach step callbacks, and set soft breakpoints.
+
+#### Program state
+
+```js
+// Is the VM still running (not halted)?
+webassembler.dbg.isRunning();   // → true / false
+
+// One-line state summary (great for logging breakpoints)
+webassembler.dbg.stateStr();
+// → "pc=7 sp=0 lr=0 [N=0 Z=1 C=0 V=0] x0=42 x1=0 x2=0 x3=0 x4=0 x5=0 x6=0 x7=0"
+
+// Force-halt the VM from outside (e.g. a timeout handler)
+webassembler.dbg.halt();
+```
+
+#### Code inspection
+
+```js
+// Token array of the instruction at a given PC (defaults to current PC)
+webassembler.dbg.instrAt();      // → ["206", "0:0"]   (puts x0)
+webassembler.dbg.instrAt(3);     // → instruction at line 3
+
+// Total number of loaded instructions
+webassembler.dbg.codeLen();      // → 42
+
+// Disassembly window around the current PC
+webassembler.dbg.context();         // default radius = 3
+webassembler.dbg.context(5);        // 5 lines before and after
+// → [
+//     { pc: 4, tokens: […], current: false },
+//     { pc: 5, tokens: […], current: false },
+//     { pc: 6, tokens: […], current: false },
+//     { pc: 7, tokens: […], current: true  },   ← you are here
+//     { pc: 8, tokens: […], current: false },
+//   ]
+```
+
+#### Stepping
+
+```js
+// Execute exactly one instruction (returns false if already halted)
+await webassembler.dbg.step();
+```
+
+#### Breakpoints / step hooks
+
+`dbg.onStep(cb)` wraps the VM's internal dispatch loop so your callback fires **before every instruction**. Return `false` from the callback to detach it automatically.
+
+```js
+// Log every instruction while x0 is non-zero
+const handle = webassembler.dbg.onStep((vm, tokens) => {
+  console.log(webassembler.dbg.stateStr(), tokens);
+  if (webassembler.reg.fetch('x0') === 0n) return false;  // detach
+});
+
+// Detach manually at any time
+handle.detach();
+```
+
+A simple soft breakpoint at a specific PC:
+
+```js
+webassembler.dbg.onStep((vm, tokens) => {
+  if (vm.pc === 10) {
+    console.log('Hit breakpoint at line 10');
+    console.log(webassembler.reg.dump());
+    webassembler.dbg.halt();   // stop the VM
+    return false;              // detach the hook
+  }
+});
 ```
 
 ---
@@ -957,5 +1207,7 @@ Each line starts with the opcode number followed by space-separated operand toke
 | `Error: too many instructions` | Output buffer full (limit: 65 536 lines) |
 | `Error: cannot open 'X'` | Input or output file could not be opened |
 | `Internal error: FIXUP marker missing` | Compiler internal consistency failure |
+| `[webassembler] No active or completed VM` | An introspection method was called before `execute()` |
+| `[webassembler] Unknown register name: 'X'` | An unrecognised name was passed to a `reg.*` method |
 
-All errors go to stderr. The assembler exits with status 1 on any error.
+All assembler errors go to stderr. The assembler exits with status 1 on any error.
