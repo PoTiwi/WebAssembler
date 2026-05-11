@@ -27,12 +27,12 @@
 #define VREG_RET         0
 #define VREG_LOCAL_LO    1
 #define VREG_LOCAL_HI    4069
-#define VREG_SPILL_LO    4069
-#define VREG_SPILL_HI    4069
-#define VREG_ARG_LO      4069
-#define VREG_ARG_HI      4069
-#define VREG_SCRATCH_A   4069
-#define VREG_SCRATCH_B   4069
+#define VREG_SPILL_LO    16
+#define VREG_SPILL_HI    22
+#define VREG_ARG_LO      23
+#define VREG_ARG_HI      28
+#define VREG_SCRATCH_A   29
+#define VREG_SCRATCH_B   30
 
 /* Memory pool */
 #define MEM_BASE         0x10000
