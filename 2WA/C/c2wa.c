@@ -9,11 +9,11 @@
 #define MAX_VARS         8192
 #define MAX_OUT          4194304     /* 4M output lines */
 #define MAX_LINE         16384
-#define MAX_SRC          (32 << 20)  /* 32MB source */
+#define MAX_SRC          (30 << 20)  /* 30MB source */
 #define MAX_LABEL_LEN    256
 #define MAX_SCOPE        2048
 #define MAX_FUNCS        2048
-#define MAX_PARAMS       32
+#define MAX_PARAMS       30
 #define MAX_FMT_ARGS     128
 #define MAX_STRUCTS      2048
 #define MAX_FIELDS       256
@@ -27,10 +27,10 @@
 #define VREG_RET         0
 #define VREG_LOCAL_LO    1
 #define VREG_LOCAL_HI    4069
-#define VREG_SPILL_LO    4069
-#define VREG_SPILL_HI    4069
-#define VREG_ARG_LO      4069
-#define VREG_ARG_HI      4069
+#define VREG_SPILL_LO    16
+#define VREG_SPILL_HI    22
+#define VREG_ARG_LO      23
+#define VREG_ARG_HI      28
 #define VREG_SCRATCH_A   29
 #define VREG_SCRATCH_B   30
 
