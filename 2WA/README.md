@@ -3,6 +3,9 @@
 </p>
 <hr>
 
+*i appreciate anyone for making supports for 2WA!*
+<hr>
+
 2WA (*short for "To Web Assembler"*) is a transpiler project that converts supported programming languages into WebAssembler instructions for a lightweight virtual machine runtime.
 
 The project focuses on experimenting with language transpilation, runtime execution, and browser-oriented low-level instruction generation.
