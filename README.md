@@ -1,5 +1,9 @@
 <img width="900" height="200" alt="wl-banner" src="https://github.com/PoTiwi/WebAssembler/blob/main/ico/wl-bg-banner.png" /> 
 <hr>
+
+  **This project will only get bug fixes**. *Updates near-furture is likely to not have anything new*.
+    
+<hr>
 A compiler that translates custom AArch64-inspired assembly into plain-text bytecode, which can then be run by the JavaScript VM — either in a browser or in Node.js. <br>
 
 Current release if you're intrested of using it, click [here](https://github.com/PoTiwi/WebAssembler/releases/tag/current)
