@@ -50,9 +50,6 @@
     ASCII:243, ASCIZ:244,
   });
 
-  /* =========================================================
-   * Constants
-   * ========================================================= */
   const U64_MAX  = (1n << 64n) - 1n;
   const U64_MASK = U64_MAX;
   const I64_MIN  = -(1n << 63n);
@@ -148,9 +145,6 @@
     }
   }
 
-  /* =========================================================
-   * Bit-manipulation helpers
-   * ========================================================= */
   function clz64(v) {
     v = BigInt.asUintN(64, v);
     if (v === 0n) return 64n;
@@ -202,9 +196,6 @@
     return r;
   }
 
-  /* =========================================================
-   * Register file + Memory
-   * ========================================================= */
   class Registers {
     constructor() {
       this.x   = new Array(31).fill(0n);
@@ -314,9 +305,6 @@
     }
   }
 
-  /* =========================================================
-   * Parser
-   * ========================================================= */
   function parseWassm(src) {
     const lines = src.split('\n');
     const code  = [];
@@ -329,9 +317,6 @@
     return code;
   }
 
-  /* =========================================================
-   * Async VM
-   * ========================================================= */
   class VM {
     constructor(code, apiHooks) {
       this.code      = code;
@@ -1109,30 +1094,7 @@
     }
   }
 
-  /* =========================================================
-   * Internal helpers — encoding strings for the register file
-   * ========================================================= */
 
-  /**
-   * Converts a user-facing register name into the internal "family:number" encoding.
-   *
-   * Supported names (case-insensitive):
-   *   x0–x30       → "0:N"    (64-bit GPR)
-   *   w0–w30       → "1:N"    (32-bit GPR, zero-extended)
-   *   sp           → "2:0"    (stack pointer)
-   *   lr / x30     → "3:0"    (link register, also aliased as x30)
-   *   xzr / wzr    → "4:0"    (zero register)
-   *   fp / x29     → "7:0"    (frame pointer)
-   *   ip0 / x16    → "8:0"
-   *   ip1 / x17    → "9:0"
-   *   d0–d31       → "10:N"   (64-bit float)
-   *   s0–s31       → "11:N"   (32-bit float)
-   *   0–30 (bare)  → "0:N"    (shorthand for xN)
-   *
-   * @param {string|number} name
-   * @returns {string} encoding
-   * @throws {Error} on unrecognised register name
-   */
   function encodeRegName(name) {
     if (typeof name === 'number') return `0:${name}`;
     const n = String(name).toLowerCase().trim();
@@ -1150,15 +1112,7 @@
     throw new Error(`[webassembler] Unknown register name: "${name}"`);
   }
 
-  /* =========================================================
-   * Public API
-   * ========================================================= */
 
-  /**
-   * The live VM instance, set during execute() so that introspection
-   * namespaces (reg, mem, flags, dbg) can reach it mid-execution or
-   * after execution.
-   */
   let _liveVM = null;
 
   function _requireVM() {
@@ -1166,94 +1120,33 @@
     return _liveVM;
   }
 
-  /* ---------------------------------------------------------
-   * webassembler.reg
-   * Register introspection and manipulation.
-   * Works during and after execute().
-   * --------------------------------------------------------- */
   const reg = {
-    /**
-     * Fetch the integer value of a general-purpose register.
-     * Returns a BigInt.
-     *
-     * @param {string|number} name  Register name or number (e.g. 0, "x0", "w3", "sp", "lr")
-     * @returns {bigint}
-     *
-     * @example
-     * webassembler.reg.fetch(0);        // x0
-     * webassembler.reg.fetch('x5');     // x5
-     * webassembler.reg.fetch('sp');     // stack pointer
-     * webassembler.reg.fetch('lr');     // link register
-     */
     fetch(name) {
       return _requireVM().regs.readInt(encodeRegName(name));
     },
 
-    /**
-     * Fetch the integer value of a register as a plain JS Number.
-     * Loses precision for values outside ±2^53, but convenient for small integers.
-     *
-     * @param {string|number} name
-     * @returns {number}
-     */
     fetchNum(name) {
       return Number(_requireVM().regs.readInt(encodeRegName(name)));
     },
 
-    /**
-     * Fetch the floating-point value of a SIMD/FP register.
-     *
-     * @param {string|number} name  e.g. "d0", "s3", or a bare number (treated as dN)
-     * @returns {number}
-     *
-     * @example
-     * webassembler.reg.fetchFloat('d0');   // d0
-     * webassembler.reg.fetchFloat('s2');   // s2 (single-precision)
-     */
     fetchFloat(name) {
       const enc = typeof name === 'number' ? `10:${name}` : encodeRegName(name);
       return _requireVM().regs.readFloat(enc);
     },
 
-    /**
-     * Fetch the string value stored in a register (set by LDS / GETS / STRCPY etc.).
-     * Returns null if no string is associated with that register.
-     *
-     * @param {string|number} name
-     * @returns {string|null}
-     */
     fetchStr(name) {
       return _requireVM().regs.readStr(encodeRegName(name));
     },
 
-    /**
-     * Write an integer value to a general-purpose register.
-     *
-     * @param {string|number} name
-     * @param {bigint|number} value
-     */
     set(name, value) {
       _requireVM().regs.writeInt(encodeRegName(name), typeof value === 'bigint' ? value : BigInt(Math.trunc(value)));
     },
 
-    /**
-     * Write a floating-point value to a SIMD/FP register.
-     *
-     * @param {string|number} name  e.g. "d1", "s0"
-     * @param {number}        value
-     */
     setFloat(name, value) {
       const enc = typeof name === 'number' ? `10:${name}` : encodeRegName(name);
       _requireVM().regs.writeFloat(enc, value);
     },
 
-    /**
-     * Write a string to a register's string slot (also updates the integer
-     * slot to the string's length, mirroring what LDS does).
-     *
-     * @param {string|number} name
-     * @param {string}        value
-     */
     setStr(name, value) {
       const vm = _requireVM();
       const enc = encodeRegName(name);
@@ -1261,24 +1154,11 @@
       vm.regs.writeInt(enc, BigInt(value.length));
     },
 
-    /**
-     * Return a snapshot of all 31 general-purpose registers (x0–x30)
-     * as an array of BigInts.
-     *
-     * @returns {bigint[]}
-     */
     snapshot() {
       const regs = _requireVM().regs;
       return Array.from({ length: 31 }, (_, i) => regs.x[i] ?? 0n);
     },
 
-    /**
-     * Return a human-readable summary of all registers as a plain object.
-     * Integer values are formatted as decimal strings (to preserve BigInt precision).
-     * Registers with an associated string value include a `str` field.
-     *
-     * @returns {object}
-     */
     dump() {
       const vm    = _requireVM();
       const regs  = vm.regs;
@@ -1296,99 +1176,44 @@
       return out;
     },
 
-    /**
-     * Return the current program counter.
-     * @returns {number}
-     */
     pc() {
       return _requireVM().pc;
     },
 
-    /**
-     * Return the current stack pointer value.
-     * @returns {bigint}
-     */
     sp() {
       return _requireVM().regs.sp;
     },
 
-    /**
-     * Return the current link register value.
-     * @returns {bigint}
-     */
     lr() {
       return _requireVM().regs.lr;
     },
 
-    /**
-     * Return a copy of the VM-level pseudo stack (PUSH/POP items).
-     * Each item is { val: bigint, str: string|null }.
-     *
-     * @returns {Array<{val: bigint, str: string|null}>}
-     */
     stack() {
       return [..._requireVM().regs.stack];
     },
 
-    /**
-     * Return the call-return stack (raw PC indices).
-     * @returns {number[]}
-     */
     callStack() {
       return [..._requireVM().callStack];
     },
 
-    /**
-     * Resolve a user-friendly name to its internal encoding string.
-     * Useful for low-level tooling that needs to call Registers methods directly.
-     *
-     * @param {string|number} name
-     * @returns {string}
-     */
     encode(name) {
       return encodeRegName(name);
     },
   };
 
-  /* ---------------------------------------------------------
-   * webassembler.mem
-   * Memory introspection and direct read/write.
-   * --------------------------------------------------------- */
   const mem = {
-    /**
-     * Read a 64-bit word from an 8-byte-aligned byte address.
-     * Returns a BigInt (signed 64-bit).
-     *
-     * @param {bigint|number} addr  Must be 8-byte aligned.
-     * @returns {bigint}
-     */
     read(addr) {
       return _requireVM().regs.memRead(BigInt(addr));
     },
 
-    /**
-     * Read a single byte from any byte address.
-     * @param {bigint|number} addr
-     * @returns {bigint}  0n–255n
-     */
     readByte(addr) {
       return _requireVM().regs.memReadByte(BigInt(addr));
     },
 
-    /**
-     * Read a 16-bit little-endian halfword.
-     * @param {bigint|number} addr
-     * @returns {bigint}
-     */
     readHalf(addr) {
       return _requireVM().regs.memReadHalf(BigInt(addr));
     },
 
-    /**
-     * Read a 32-bit little-endian word from any byte address.
-     * @param {bigint|number} addr
-     * @returns {bigint}
-     */
     readWord(addr) {
       const a = BigInt(addr);
       const regs = _requireVM().regs;
@@ -1397,41 +1222,18 @@
       return w;
     },
 
-    /**
-     * Write a 64-bit value to an 8-byte-aligned address.
-     * @param {bigint|number} addr
-     * @param {bigint|number} value
-     */
     write(addr, value) {
       _requireVM().regs.memWrite(BigInt(addr), BigInt(value));
     },
 
-    /**
-     * Write a single byte to any byte address.
-     * @param {bigint|number} addr
-     * @param {bigint|number} value  Only the low 8 bits are stored.
-     */
     writeByte(addr, value) {
       _requireVM().regs.memWriteByte(BigInt(addr), BigInt(value));
     },
 
-    /**
-     * Write a 16-bit little-endian halfword.
-     * @param {bigint|number} addr
-     * @param {bigint|number} value
-     */
     writeHalf(addr, value) {
       _requireVM().regs.memWriteHalf(BigInt(addr), BigInt(value));
     },
 
-    /**
-     * Read a null-terminated ASCII string from memory starting at `addr`.
-     * Reads byte by byte until a 0x00 byte or `maxLen` bytes are consumed.
-     *
-     * @param {bigint|number} addr
-     * @param {number}        [maxLen=1024]
-     * @returns {string}
-     */
     readCString(addr, maxLen = 1024) {
       const regs = _requireVM().regs;
       let a = BigInt(addr), out = '';
@@ -1443,89 +1245,46 @@
       return out;
     },
 
-    /**
-     * Write a JS string into memory as null-terminated ASCII, starting at `addr`.
-     * @param {bigint|number} addr
-     * @param {string}        str
-     */
     writeCString(addr, str) {
       const regs = _requireVM().regs;
       let a = BigInt(addr);
       for (let i = 0; i < str.length; i++) {
         regs.memWriteByte(a++, BigInt(str.charCodeAt(i) & 0xff));
       }
-      regs.memWriteByte(a, 0n);  // null terminator
+      regs.memWriteByte(a, 0n);  
     },
 
-    /**
-     * Read `count` consecutive 64-bit words starting at `addr` (8-byte steps).
-     * @param {bigint|number} addr
-     * @param {number}        count
-     * @returns {bigint[]}
-     */
     readWords(addr, count) {
       const regs = _requireVM().regs;
       const a = BigInt(addr);
       return Array.from({ length: count }, (_, i) => regs.memRead(a + BigInt(i) * 8n));
     },
 
-    /**
-     * Write an array of BigInt values as consecutive 64-bit words starting at `addr`.
-     * @param {bigint|number} addr
-     * @param {bigint[]}      values
-     */
     writeWords(addr, values) {
       const regs = _requireVM().regs;
       let a = BigInt(addr);
       for (const v of values) { regs.memWrite(a, BigInt(v)); a += 8n; }
     },
 
-    /**
-     * Return a Map of all written memory locations.
-     * Keys are byte-address strings, values are BigInts.
-     * The returned Map is a shallow copy — mutations do not affect the VM.
-     *
-     * @returns {Map<string, bigint>}
-     */
     dump() {
       return new Map(_requireVM().regs.mem);
     },
 
-    /**
-     * Return how many 64-bit words have been written to memory.
-     * @returns {number}
-     */
     size() {
       return _requireVM().regs.mem.size;
     },
 
-    /**
-     * Clear all memory (useful for test harnesses between runs on the same VM).
-     */
     clear() {
       _requireVM().regs.mem.clear();
     },
   };
 
-  /* ---------------------------------------------------------
-   * webassembler.flags
-   * NZCV flag read/write.
-   * --------------------------------------------------------- */
   const flags = {
-    /**
-     * Return a snapshot of all four condition flags.
-     * @returns {{ N: boolean, Z: boolean, C: boolean, V: boolean }}
-     */
     get() {
       const r = _requireVM().regs;
       return { N: r.N, Z: r.Z, C: r.C, V: r.V };
     },
 
-    /**
-     * Overwrite one or more condition flags.
-     * Only the keys you supply are changed.
-     * @param {{ N?: boolean, Z?: boolean, C?: boolean, V?: boolean }} patch
-     */
     set(patch) {
       const r = _requireVM().regs;
       if ('N' in patch) r.N = !!patch.N;
@@ -1534,65 +1293,32 @@
       if ('V' in patch) r.V = !!patch.V;
     },
 
-    /** @returns {boolean} Negative flag */
     N() { return _requireVM().regs.N; },
-    /** @returns {boolean} Zero flag */
     Z() { return _requireVM().regs.Z; },
-    /** @returns {boolean} Carry flag */
     C() { return _requireVM().regs.C; },
-    /** @returns {boolean} Overflow flag */
     V() { return _requireVM().regs.V; },
 
-    /**
-     * Evaluate an AArch64 condition code against the current flags.
-     * @param {string} cond  e.g. "eq", "ne", "lt", "ge", "hi", "lo" …
-     * @returns {boolean}
-     */
     eval(cond) {
       return evalCond(cond, _requireVM().regs);
     },
 
-    /**
-     * Return the 4-bit NZCV value packed as a number (bit 3=N, 2=Z, 1=C, 0=V).
-     * @returns {number}
-     */
     nzcv() {
       const r = _requireVM().regs;
       return (r.N ? 8 : 0) | (r.Z ? 4 : 0) | (r.C ? 2 : 0) | (r.V ? 1 : 0);
     },
   };
 
-  /* ---------------------------------------------------------
-   * webassembler.dbg
-   * Debug and execution-tracing utilities.
-   * --------------------------------------------------------- */
   const dbg = {
-    /**
-     * Return the instruction token array at a given PC index.
-     * Returns null if the index is out of range.
-     *
-     * @param {number} [pc]  Defaults to current PC.
-     * @returns {string[]|null}
-     */
     instrAt(pc) {
       const vm = _requireVM();
       const idx = pc !== undefined ? pc : vm.pc;
       return vm.code[idx] ?? null;
     },
 
-    /**
-     * Return the total number of loaded instructions.
-     * @returns {number}
-     */
     codeLen() {
       return _requireVM().code.length;
     },
 
-    /**
-     * Return a slice of instructions around the current PC for context.
-     * @param {number} [radius=3]  Lines before and after the current PC.
-     * @returns {Array<{pc: number, tokens: string[], current: boolean}>}
-     */
     context(radius = 3) {
       const vm  = _requireVM();
       const cur = vm.pc;
@@ -1605,27 +1331,14 @@
       }));
     },
 
-    /**
-     * Return whether the VM is still running (i.e. has not halted).
-     * @returns {boolean}
-     */
     isRunning() {
       return _requireVM().running;
     },
 
-    /**
-     * Force-halt the running VM.  Useful from a timeout or external interrupt.
-     */
     halt() {
       _requireVM().running = false;
     },
 
-    /**
-     * Execute exactly one instruction step from outside the VM loop.
-     * Returns false if the VM is already stopped or out of bounds.
-     *
-     * @returns {Promise<boolean>}
-     */
     async step() {
       const vm = _requireVM();
       if (!vm.running || vm.pc < 0 || vm.pc >= vm.code.length) return false;
@@ -1634,12 +1347,6 @@
       return true;
     },
 
-    /**
-     * Produce a concise human-readable string describing the current VM state.
-     * Useful for logging breakpoints.
-     *
-     * @returns {string}
-     */
     stateStr() {
       const vm = _requireVM();
       const r  = vm.regs;
@@ -1648,19 +1355,6 @@
       return `pc=${vm.pc} sp=${r.sp} lr=${r.lr} [${nzcv}] ${gpr}`;
     },
 
-    /**
-     * Attach a one-shot or persistent breakpoint callback that fires
-     * before every instruction step.  The callback receives the VM instance
-     * and the current token array.  Return `false` from the callback to
-     * detach it automatically.
-     *
-     * Because the VM loop runs asynchronously this works by wrapping the
-     * VM's internal step() method — call detach() on the returned handle
-     * to remove the hook cleanly.
-     *
-     * @param {function(vm: VM, tokens: string[]): boolean|void} cb
-     * @returns {{ detach: function }}
-     */
     onStep(cb) {
       const vm       = _requireVM();
       const original = vm.step.bind(vm);
@@ -1673,23 +1367,14 @@
     },
   };
 
-  /* =========================================================
-   * Public API object
-   * ========================================================= */
   const api = {
     _code: null,
 
-    // ── Introspection namespaces ──────────────────────────────
-    /** Register introspection & manipulation. */
     reg,
-    /** Memory introspection & manipulation. */
     mem,
-    /** NZCV flag read/write & evaluation. */
     flags,
-    /** Debug / step / tracing utilities. */
     dbg,
 
-    // ── Callbacks ─────────────────────────────────────────────
     onOutput(text) { console.log(text); },
     onError(text)  { console.error(text); },
     onInput()      {
@@ -1698,7 +1383,6 @@
       );
     },
 
-    // ── Loaders ───────────────────────────────────────────────
     init(url, callback) {
       return fetch(url)
         .then(r => {
@@ -1724,15 +1408,6 @@
       });
     },
 
-    // ── Execution ─────────────────────────────────────────────
-    /**
-     * Execute the loaded bytecode.
-     * A fresh VM instance is created for each call, stored in _liveVM
-     * so that the reg/mem/flags/dbg namespaces can reach it.
-     *
-     * @param {number} [yieldEvery=50000]
-     * @returns {Promise<void>}
-     */
     execute(yieldEvery = 50_000) {
       if (!this._code) {
         return Promise.reject(new Error('No bytecode loaded — call init() or initFromString() first.'));
@@ -1746,7 +1421,6 @@
       return vm.run(yieldEvery);
     },
 
-    /** Returns a copy of the opcode table for introspection or tooling. */
     get opcodes() { return { ...OP }; },
   };
 
