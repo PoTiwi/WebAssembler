@@ -1,14 +1,14 @@
 <img width="900" height="200" alt="wl-banner" src="https://github.com/PoTiwi/WebAssembler/blob/main/ico/wl-bg-banner.png" /> 
 <hr>
 
-  **This project will only get bug fixes**. *Updates near-furture is likely to not have anything new*.
+  **This project will only get bug fixes**. *Don't expect much new stuff anytime soon*.
     
 <hr>
-A compiler that translates custom AArch64-inspired assembly into plain-text bytecode, which can then be run by the JavaScript VM - either in a browser or in Node.js. <br>
+A compiler that translates custom AArch64-inspired assembly into plain-text bytecode, which you can then run with the JavaScript VM — in the browser or Node.js. <br>
 
-Current release if you're intrested of using it, click [here](https://github.com/PoTiwi/WebAssembler/releases/tag/current)
+If you want to try it out, grab the latest release [here](https://github.com/PoTiwi/WebAssembler/releases/tag/current).
 
-The whole pipeline looks like this:
+Here's the full pipeline at a glance:
 
 ```
 a.iwa  →  [assembler]  →  a.wassm  →  [wlbi.js]  →  output
@@ -73,7 +73,7 @@ a.iwa  →  [assembler]  →  a.wassm  →  [wlbi.js]  →  output
 
 ### Step 1 - Write some assembly
 
-Create a file called `hello.iwa`:
+Make a file called `hello.iwa`:
 
 ```asm
 ; hello.iwa - classic greeting
@@ -97,7 +97,7 @@ Compiled 3 instruction(s) -> hello.wassm
 
 ### Step 3 - Run it in the browser
 
-Drop `wlbi.js` into your project. Then in your HTML:
+Drop `wlbi.js` into your project, then add this to your HTML:
 
 ```html
 <script src="wlbi.js"></script>
@@ -151,24 +151,24 @@ Usage:
 
 ## JavaScript VM Reference
 
-`wlbi.js` exposes a single global object (or CommonJS module export) called `webassembler`. Everything is async under the hood - programs that need input (`geti`, `gets`) suspend and wait for a Promise to resolve before continuing.
+`wlbi.js` exposes a single global object (or CommonJS module export) called `webassembler`. Everything runs async under the hood — programs that need input (`geti`, `gets`) suspend and wait for a Promise to resolve before carrying on.
 
 ### Loading bytecode
 
-There are three ways to get bytecode into the VM:
+Three ways to get bytecode into the VM:
 
 ```js
 // From a URL (uses fetch - works in the browser and Node ≥18)
 webassembler.init("program.wassm", callback);
 
-// From a raw string (useful for embedding bytecode inline)
+// From a raw string (handy for embedding bytecode inline)
 webassembler.initFromString(bytecodeSrc, callback);
 
 // From a File or Blob object (browser file input, drag-and-drop, etc.)
 webassembler.initFromFile(fileObject, callback);
 ```
 
-All three return a `Promise` and also accept an optional callback - use whichever style you prefer:
+All three return a `Promise` and accept an optional callback — use whichever style you like:
 
 ```js
 // Promise style
@@ -181,7 +181,7 @@ webassembler.init("program.wassm", () => webassembler.execute());
 
 ### I/O hooks
 
-Set these **before** calling `execute()`. They are plain properties on the `webassembler` object.
+Set these **before** calling `execute()`. They're plain properties on the `webassembler` object.
 
 ```js
 // Called whenever the program prints something (puts, itoa+puts, etc.)
@@ -217,11 +217,11 @@ await webassembler.execute();
 await webassembler.execute(10_000);
 ```
 
-`execute()` returns a Promise that resolves when the program reaches `halt` or runs off the end of the bytecode.
+`execute()` returns a Promise that resolves when the program hits `halt` or runs off the end of the bytecode.
 
 ### Full browser example
 
-This wires up a simple terminal-style UI: a scrolling output area and an input field that the program can read from.
+This wires up a simple terminal-style UI: a scrolling output area and an input field the program can read from.
 
 ```html
 <!DOCTYPE html>
@@ -299,7 +299,7 @@ webassembler.init(file, async () => {
 });
 ```
 
-Save as `run.js`, then:
+Save it as `run.js`, then:
 
 ```sh
 node run.js hello.wassm
@@ -307,7 +307,7 @@ node run.js hello.wassm
 
 ### Performance tuning
 
-The VM yields to the browser's event loop every N instructions so the page stays responsive. The default (`50 000`) is a good balance, but you can tune it:
+The VM yields to the browser's event loop every N instructions to keep the page responsive. The default (`50 000`) is a reasonable middle ground, but you can tune it:
 
 ```js
 // More responsive during heavy loops (slower overall)
@@ -321,13 +321,13 @@ webassembler.execute(500_000);
 
 ## Introspection API
 
-After calling `execute()` (or mid-execution via `dbg.onStep`), the VM's internal state is accessible through four namespaces: `reg`, `mem`, `flags`, and `dbg`. These are useful for building debuggers, test harnesses, visualisers, or any tooling that needs to observe or manipulate a running program.
+After calling `execute()` (or mid-execution via `dbg.onStep`), the VM's internal state is available through four namespaces: `reg`, `mem`, `flags`, and `dbg`. These come in handy when building debuggers, test harnesses, visualisers, or anything else that needs to peek at a running program.
 
-All four namespaces throw if accessed before `execute()` has been called at least once.
+All four namespaces throw if you access them before `execute()` has been called at least once.
 
 ### `webassembler.reg` - Registers
 
-Read and write any register by its familiar assembly name (`"x0"`, `"sp"`, `"lr"`, `"d3"`, etc.) or by bare number (`0` is treated as `x0`).
+Read and write any register by name (`"x0"`, `"sp"`, `"lr"`, `"d3"`, etc.) or by bare number (`0` is treated as `x0`).
 
 #### Reading
 
@@ -338,7 +338,7 @@ webassembler.reg.fetch(0);           // same - bare number is shorthand for xN
 webassembler.reg.fetch('sp');        // → stack pointer value
 webassembler.reg.fetch('lr');        // → link register value
 
-// Read as a plain JS Number (convenient for small values)
+// Read as a plain JS Number (handy for small values)
 webassembler.reg.fetchNum('x1');     // → 42  (watch out above ±2^53)
 
 // Read a float register
@@ -465,7 +465,7 @@ Read and write the four AArch64 condition flags.
 webassembler.flags.get();
 // → { N: false, Z: true, C: false, V: false }
 
-// Patch one or more flags (other flags are untouched)
+// Patch one or more flags (other flags are left alone)
 webassembler.flags.set({ Z: true, C: false });
 
 // Individual accessors
@@ -483,7 +483,7 @@ webassembler.flags.eval('hi');   // → false (C && !Z)
 webassembler.flags.nzcv();   // → 4  (0b0100 = Z only)
 ```
 
-Condition codes accepted by `flags.eval()` are the same as those used in assembly: `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `lo`/`cc`, `ls`, `hi`, `hs`/`cs`, `mi`, `pl`, `vs`, `vc`, `al`.
+Condition codes accepted by `flags.eval()` are the same ones you'd use in assembly: `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `lo`/`cc`, `ls`, `hi`, `hs`/`cs`, `mi`, `pl`, `vs`, `vc`, `al`.
 
 ---
 
@@ -568,7 +568,7 @@ webassembler.dbg.onStep((vm, tokens) => {
 
 ### Comments
 
-Comments start with `;` and run to the end of the line. They can appear on their own line or after an instruction.
+Comments start with `;` and run to the end of the line. They can go on their own line or after an instruction.
 
 ```asm
 ; full-line comment
@@ -577,7 +577,7 @@ mov x0, #42    ; inline comment
 
 ### Labels
 
-A label is a name followed by a colon. It marks the position of the next instruction and can be used as a branch target. Labels are resolved at compile time - the VM only ever sees line numbers.
+A label is a name followed by a colon. It marks the position of the next instruction and can be used as a branch target. Labels are resolved at compile time — the VM only ever sees line numbers.
 
 ```asm
 loop:
@@ -601,9 +601,9 @@ Label names are case-sensitive and can contain letters, digits, underscores (`_`
 | `x0`–`x30` | 64-bit general-purpose registers |
 | `w0`–`w30` | 32-bit view of the same registers (reads/writes zero-extend) |
 | `sp` | Stack pointer |
-| `lr` | Link register - holds the return address after `bl`/`call` |
+| `lr` | Link register — holds the return address after `bl`/`call` |
 | `fp` | Frame pointer (alias for `x29`) |
-| `xzr` / `wzr` | Zero register - always reads as 0, writes are discarded |
+| `xzr` / `wzr` | Zero register — always reads as 0, writes are discarded |
 | `ip0` / `ip1` | Scratch registers (aliases for `x16`/`x17`) |
 | `d0`–`d31` | 64-bit floating-point (double) |
 | `s0`–`s31` | 32-bit floating-point (single) |
@@ -799,7 +799,7 @@ ret             ; return (jumps to lr)
 ret  x0         ; return to address in x0
 ```
 
-**Conditional branches - set flags first with `cmp`, `adds`, `subs`, etc.:**
+**Conditional branches — set flags first with `cmp`, `adds`, `subs`, etc.:**
 
 ```asm
 cmp  x0, #10
@@ -853,7 +853,7 @@ tst x0, x1       ; sets flags for x0 & x1
 
 ### Conditional Select
 
-These let you pick between two values without a branch.
+Pick between two values without branching.
 
 ```asm
 csel  x0, x1, x2, eq   ; x0 = (eq) ? x1 : x2
@@ -958,7 +958,7 @@ fcvtns x0, d0         ; float → integer (round to nearest)
 
 ### String and Memory Utilities
 
-These are high-level custom instructions that operate on the string value attached to a register.
+High-level custom instructions that operate on the string value attached to a register.
 
 | Instruction | What it does |
 |---|---|
@@ -1047,20 +1047,20 @@ msr nzcv, x0      ; write system register (no-op in VM)
 
 ### Stack
 
-The VM provides a simple built-in value stack separate from memory.
+The VM has a simple built-in value stack separate from memory.
 
 ```asm
 push x0    ; push x0 onto the stack
 pop  x0    ; pop top of stack into x0
 ```
 
-Subroutine calls (`bl` / `call`) use the VM's internal call stack, not the value stack, so you don't need to manage return addresses manually.
+Subroutine calls (`bl` / `call`) use the VM's internal call stack, not the value stack, so you don't need to manage return addresses yourself.
 
 ---
 
 ### Data Directives
 
-These embed data into the bytecode stream. The VM steps over them at runtime.
+These embed data into the bytecode stream. The VM skips over them at runtime.
 
 ```asm
 .word  #0xDEADBEEF   ; embed a 32-bit value
@@ -1142,13 +1142,13 @@ Every bytecode opcode, for reference. You only need this if you're writing tooli
 | 238 | .align | 239 | .word | 240 | .dword | 241 | .byte |
 | 242 | .space | 243 | .ascii | 244 | .asciz | | |
 
-Opcode 229 is a label marker used internally by the assembler and is never written to the output file.
+Opcode 229 is a label marker used internally by the assembler and never written to the output file.
 
 ---
 
 ## Bytecode Format
 
-`.wassm` files are plain text - one instruction per line. You can read them with any text editor.
+`.wassm` files are plain text — one instruction per line. You can open them in any text editor.
 
 **Header:**
 
@@ -1163,13 +1163,13 @@ Opcode 229 is a label marker used internally by the assembler and is never writt
 
 Each line starts with the opcode number followed by space-separated operand tokens:
 
-- Registers: `family:number` - e.g. `0:0` = `x0`, `1:1` = `w1`, `2:0` = `sp`
+- Registers: `family:number` — e.g. `0:0` = `x0`, `1:1` = `w1`, `2:0` = `sp`
 - Immediates: plain decimal integers
 - Mode flags: `R` (register operand), `I` (immediate), `M` (memory)
-- Strings: spaces encoded as `\~`, all other escapes (`\n`, `\t`, `\\`) are kept as-is
+- Strings: spaces encoded as `\~`, all other escapes (`\n`, `\t`, `\\`) kept as-is
 - Labels: resolved to the integer line index of the target instruction
 
-**Example - the "Hello, World" program above:**
+**Example — the "Hello, World!" program from above:**
 
 ```
 ; WebAssembler Bytecode v1.0
