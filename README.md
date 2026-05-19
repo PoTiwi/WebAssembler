@@ -4,7 +4,7 @@
   **This project will only get bug fixes**. *Updates near-furture is likely to not have anything new*.
     
 <hr>
-A compiler that translates custom AArch64-inspired assembly into plain-text bytecode, which can then be run by the JavaScript VM — either in a browser or in Node.js. <br>
+A compiler that translates custom AArch64-inspired assembly into plain-text bytecode, which can then be run by the JavaScript VM - either in a browser or in Node.js. <br>
 
 Current release if you're intrested of using it, click [here](https://github.com/PoTiwi/WebAssembler/releases/tag/current)
 
@@ -19,10 +19,10 @@ a.iwa  →  [assembler]  →  a.wassm  →  [wlbi.js]  →  output
 ## Table of Contents
 
 - [Quick Start](#quick-start)
-  - [Step 1 — Write some assembly](#step-1--write-some-assembly)
-  - [Step 2 — Compile it](#step-2--compile-it)
-  - [Step 3 — Run it in the browser](#step-3--run-it-in-the-browser)
-  - [Step 3 (alternative) — Run it in Node.js](#step-3-alternative--run-it-in-nodejs)
+  - [Step 1 - Write some assembly](#step-1--write-some-assembly)
+  - [Step 2 - Compile it](#step-2--compile-it)
+  - [Step 3 - Run it in the browser](#step-3--run-it-in-the-browser)
+  - [Step 3 (alternative) - Run it in Node.js](#step-3-alternative--run-it-in-nodejs)
 - [Building the Assembler](#building-the-assembler)
 - [JavaScript VM Reference](#javascript-vm-reference)
   - [Loading bytecode](#loading-bytecode)
@@ -32,10 +32,10 @@ a.iwa  →  [assembler]  →  a.wassm  →  [wlbi.js]  →  output
   - [Full Node.js example](#full-nodejs-example)
   - [Performance tuning](#performance-tuning)
 - [Introspection API](#introspection-api)
-  - [webassembler.reg — Registers](#webassemblerregg--registers)
-  - [webassembler.mem — Memory](#webassemblermem--memory)
-  - [webassembler.flags — NZCV Flags](#webassemblerflags--nzcv-flags)
-  - [webassembler.dbg — Debugging](#webassemblerdbg--debugging)
+  - [webassembler.reg - Registers](#webassemblerregg--registers)
+  - [webassembler.mem - Memory](#webassemblermem--memory)
+  - [webassembler.flags - NZCV Flags](#webassemblerflags--nzcv-flags)
+  - [webassembler.dbg - Debugging](#webassemblerdbg--debugging)
 - [Assembly Language Guide](#assembly-language-guide)
   - [Comments](#comments)
   - [Labels](#labels)
@@ -71,19 +71,19 @@ a.iwa  →  [assembler]  →  a.wassm  →  [wlbi.js]  →  output
 
 ## Quick Start
 
-### Step 1 — Write some assembly
+### Step 1 - Write some assembly
 
 Create a file called `hello.iwa`:
 
 ```asm
-; hello.iwa — classic greeting
+; hello.iwa - classic greeting
 
     lds  x0, "Hello, World!\n"
     puts x0
     halt
 ```
 
-### Step 2 — Compile it
+### Step 2 - Compile it
 
 ```sh
 ./wa-c hello.iwa hello.wassm
@@ -95,7 +95,7 @@ You should see:
 Compiled 3 instruction(s) -> hello.wassm
 ```
 
-### Step 3 — Run it in the browser
+### Step 3 - Run it in the browser
 
 Drop `wlbi.js` into your project. Then in your HTML:
 
@@ -110,7 +110,7 @@ Drop `wlbi.js` into your project. Then in your HTML:
 </script>
 ```
 
-### Step 3 (alternative) — Run it in Node.js
+### Step 3 (alternative) - Run it in Node.js
 
 ```js
 const webassembler = require('./wlbi.js');
@@ -151,14 +151,14 @@ Usage:
 
 ## JavaScript VM Reference
 
-`wlbi.js` exposes a single global object (or CommonJS module export) called `webassembler`. Everything is async under the hood — programs that need input (`geti`, `gets`) suspend and wait for a Promise to resolve before continuing.
+`wlbi.js` exposes a single global object (or CommonJS module export) called `webassembler`. Everything is async under the hood - programs that need input (`geti`, `gets`) suspend and wait for a Promise to resolve before continuing.
 
 ### Loading bytecode
 
 There are three ways to get bytecode into the VM:
 
 ```js
-// From a URL (uses fetch — works in the browser and Node ≥18)
+// From a URL (uses fetch - works in the browser and Node ≥18)
 webassembler.init("program.wassm", callback);
 
 // From a raw string (useful for embedding bytecode inline)
@@ -168,7 +168,7 @@ webassembler.initFromString(bytecodeSrc, callback);
 webassembler.initFromFile(fileObject, callback);
 ```
 
-All three return a `Promise` and also accept an optional callback — use whichever style you prefer:
+All three return a `Promise` and also accept an optional callback - use whichever style you prefer:
 
 ```js
 // Promise style
@@ -209,7 +209,7 @@ If you don't set `onInput`, the VM falls back to the browser's built-in `prompt(
 ### Running the program
 
 ```js
-// Basic — run to completion
+// Basic - run to completion
 await webassembler.execute();
 
 // With a custom yield threshold (default is 50 000)
@@ -325,7 +325,7 @@ After calling `execute()` (or mid-execution via `dbg.onStep`), the VM's internal
 
 All four namespaces throw if accessed before `execute()` has been called at least once.
 
-### `webassembler.reg` — Registers
+### `webassembler.reg` - Registers
 
 Read and write any register by its familiar assembly name (`"x0"`, `"sp"`, `"lr"`, `"d3"`, etc.) or by bare number (`0` is treated as `x0`).
 
@@ -334,7 +334,7 @@ Read and write any register by its familiar assembly name (`"x0"`, `"sp"`, `"lr"
 ```js
 // Read x0 as a BigInt (always exact, no precision loss)
 webassembler.reg.fetch('x0');        // → 42n
-webassembler.reg.fetch(0);           // same — bare number is shorthand for xN
+webassembler.reg.fetch(0);           // same - bare number is shorthand for xN
 webassembler.reg.fetch('sp');        // → stack pointer value
 webassembler.reg.fetch('lr');        // → link register value
 
@@ -365,7 +365,7 @@ webassembler.reg.setStr('x1', 'hello');   // write string (also sets length in i
 webassembler.reg.snapshot();
 // → [0n, 42n, 0n, …]
 
-// Full human-readable dump — PC, SP, LR, every GPR and FPR
+// Full human-readable dump - PC, SP, LR, every GPR and FPR
 webassembler.reg.dump();
 // → { pc: 7, sp: "0", lr: "0", gpr: { x0: { value: "42", str: "hi" }, … }, fpr: { d0: 3.14, … } }
 
@@ -406,7 +406,7 @@ webassembler.reg.encode('d0');   // → "10:0"
 
 ---
 
-### `webassembler.mem` — Memory
+### `webassembler.mem` - Memory
 
 Direct access to the VM's byte-addressed memory. All addresses accept either `bigint` or `number`.
 
@@ -444,7 +444,7 @@ webassembler.mem.writeWords(0n, [1n, 2n, 3n]);
 
 ```js
 // Full snapshot of all written locations
-// Keys are byte-address strings, values are BigInts — mutations don't affect the VM
+// Keys are byte-address strings, values are BigInts - mutations don't affect the VM
 webassembler.mem.dump();    // → Map { "0" => 42n, "8" => 7n, … }
 
 // Number of 64-bit words currently stored
@@ -456,7 +456,7 @@ webassembler.mem.clear();
 
 ---
 
-### `webassembler.flags` — NZCV Flags
+### `webassembler.flags` - NZCV Flags
 
 Read and write the four AArch64 condition flags.
 
@@ -487,7 +487,7 @@ Condition codes accepted by `flags.eval()` are the same as those used in assembl
 
 ---
 
-### `webassembler.dbg` — Debugging
+### `webassembler.dbg` - Debugging
 
 Inspect and control execution, attach step callbacks, and set soft breakpoints.
 
@@ -577,7 +577,7 @@ mov x0, #42    ; inline comment
 
 ### Labels
 
-A label is a name followed by a colon. It marks the position of the next instruction and can be used as a branch target. Labels are resolved at compile time — the VM only ever sees line numbers.
+A label is a name followed by a colon. It marks the position of the next instruction and can be used as a branch target. Labels are resolved at compile time - the VM only ever sees line numbers.
 
 ```asm
 loop:
@@ -601,9 +601,9 @@ Label names are case-sensitive and can contain letters, digits, underscores (`_`
 | `x0`–`x30` | 64-bit general-purpose registers |
 | `w0`–`w30` | 32-bit view of the same registers (reads/writes zero-extend) |
 | `sp` | Stack pointer |
-| `lr` | Link register — holds the return address after `bl`/`call` |
+| `lr` | Link register - holds the return address after `bl`/`call` |
 | `fp` | Frame pointer (alias for `x29`) |
-| `xzr` / `wzr` | Zero register — always reads as 0, writes are discarded |
+| `xzr` / `wzr` | Zero register - always reads as 0, writes are discarded |
 | `ip0` / `ip1` | Scratch registers (aliases for `x16`/`x17`) |
 | `d0`–`d31` | 64-bit floating-point (double) |
 | `s0`–`s31` | 32-bit floating-point (single) |
@@ -799,7 +799,7 @@ ret             ; return (jumps to lr)
 ret  x0         ; return to address in x0
 ```
 
-**Conditional branches — set flags first with `cmp`, `adds`, `subs`, etc.:**
+**Conditional branches - set flags first with `cmp`, `adds`, `subs`, etc.:**
 
 ```asm
 cmp  x0, #10
@@ -811,21 +811,21 @@ Full list of conditional branch mnemonics:
 
 | Mnemonic | Alternate | Condition |
 |---|---|---|
-| `b.eq` / `beq` / `jeq` | — | Equal |
-| `b.ne` / `bne` / `jne` | — | Not equal |
-| `b.lt` / `blt` / `jlt` | — | Signed less than |
-| `b.le` / `ble` / `jle` | — | Signed ≤ |
-| `b.gt` / `bgt` / `jgt` | — | Signed greater than |
-| `b.ge` / `bge` / `jge` | — | Signed ≥ |
-| `b.lo` / `blo` | — | Unsigned lower |
-| `b.ls` / `bls` | — | Unsigned lower or same |
-| `b.hi` / `bhi` | — | Unsigned higher |
-| `b.hs` / `bhs` | — | Unsigned higher or same |
-| `b.mi` / `bmi` | — | Negative |
-| `b.pl` / `bpl` | — | Non-negative |
-| `b.vs` / `bvs` | — | Overflow |
-| `b.vc` / `bvc` | — | No overflow |
-| `b.al` / `bal` | — | Always |
+| `b.eq` / `beq` / `jeq` | - | Equal |
+| `b.ne` / `bne` / `jne` | - | Not equal |
+| `b.lt` / `blt` / `jlt` | - | Signed less than |
+| `b.le` / `ble` / `jle` | - | Signed ≤ |
+| `b.gt` / `bgt` / `jgt` | - | Signed greater than |
+| `b.ge` / `bge` / `jge` | - | Signed ≥ |
+| `b.lo` / `blo` | - | Unsigned lower |
+| `b.ls` / `bls` | - | Unsigned lower or same |
+| `b.hi` / `bhi` | - | Unsigned higher |
+| `b.hs` / `bhs` | - | Unsigned higher or same |
+| `b.mi` / `bmi` | - | Negative |
+| `b.pl` / `bpl` | - | Non-negative |
+| `b.vs` / `bvs` | - | Overflow |
+| `b.vc` / `bvc` | - | No overflow |
+| `b.al` / `bal` | - | Always |
 
 **Register-based conditional branches:**
 
@@ -1148,7 +1148,7 @@ Opcode 229 is a label marker used internally by the assembler and is never writt
 
 ## Bytecode Format
 
-`.wassm` files are plain text — one instruction per line. You can read them with any text editor.
+`.wassm` files are plain text - one instruction per line. You can read them with any text editor.
 
 **Header:**
 
@@ -1163,13 +1163,13 @@ Opcode 229 is a label marker used internally by the assembler and is never writt
 
 Each line starts with the opcode number followed by space-separated operand tokens:
 
-- Registers: `family:number` — e.g. `0:0` = `x0`, `1:1` = `w1`, `2:0` = `sp`
+- Registers: `family:number` - e.g. `0:0` = `x0`, `1:1` = `w1`, `2:0` = `sp`
 - Immediates: plain decimal integers
 - Mode flags: `R` (register operand), `I` (immediate), `M` (memory)
 - Strings: spaces encoded as `\~`, all other escapes (`\n`, `\t`, `\\`) are kept as-is
 - Labels: resolved to the integer line index of the target instruction
 
-**Example — the "Hello, World" program above:**
+**Example - the "Hello, World" program above:**
 
 ```
 ; WebAssembler Bytecode v1.0
