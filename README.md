@@ -4,7 +4,7 @@
   **This project will only get bug fixes**. *Don't expect much new stuff anytime soon*.
     
 <hr>
-A compiler that translates custom AArch64-inspired assembly into plain-text bytecode, which you can then run with the JavaScript VM — in the browser or Node.js. <br>
+A compiler that translates custom AArch64-inspired assembly into plain-text bytecode, which you can then run with the JavaScript VM - in the browser or Node.js. <br>
 
 If you want to try it out, grab the latest release [here](https://github.com/PoTiwi/WebAssembler/releases/tag/current).
 
@@ -151,7 +151,7 @@ Usage:
 
 ## JavaScript VM Reference
 
-`wlbi.js` exposes a single global object (or CommonJS module export) called `webassembler`. Everything runs async under the hood — programs that need input (`geti`, `gets`) suspend and wait for a Promise to resolve before carrying on.
+`wlbi.js` exposes a single global object (or CommonJS module export) called `webassembler`. Everything runs async under the hood - programs that need input (`geti`, `gets`) suspend and wait for a Promise to resolve before carrying on.
 
 ### Loading bytecode
 
@@ -168,7 +168,7 @@ webassembler.initFromString(bytecodeSrc, callback);
 webassembler.initFromFile(fileObject, callback);
 ```
 
-All three return a `Promise` and accept an optional callback — use whichever style you like:
+All three return a `Promise` and accept an optional callback - use whichever style you like:
 
 ```js
 // Promise style
@@ -577,7 +577,7 @@ mov x0, #42    ; inline comment
 
 ### Labels
 
-A label is a name followed by a colon. It marks the position of the next instruction and can be used as a branch target. Labels are resolved at compile time — the VM only ever sees line numbers.
+A label is a name followed by a colon. It marks the position of the next instruction and can be used as a branch target. Labels are resolved at compile time - the VM only ever sees line numbers.
 
 ```asm
 loop:
@@ -601,9 +601,9 @@ Label names are case-sensitive and can contain letters, digits, underscores (`_`
 | `x0`–`x30` | 64-bit general-purpose registers |
 | `w0`–`w30` | 32-bit view of the same registers (reads/writes zero-extend) |
 | `sp` | Stack pointer |
-| `lr` | Link register — holds the return address after `bl`/`call` |
+| `lr` | Link register - holds the return address after `bl`/`call` |
 | `fp` | Frame pointer (alias for `x29`) |
-| `xzr` / `wzr` | Zero register — always reads as 0, writes are discarded |
+| `xzr` / `wzr` | Zero register - always reads as 0, writes are discarded |
 | `ip0` / `ip1` | Scratch registers (aliases for `x16`/`x17`) |
 | `d0`–`d31` | 64-bit floating-point (double) |
 | `s0`–`s31` | 32-bit floating-point (single) |
@@ -799,7 +799,7 @@ ret             ; return (jumps to lr)
 ret  x0         ; return to address in x0
 ```
 
-**Conditional branches — set flags first with `cmp`, `adds`, `subs`, etc.:**
+**Conditional branches - set flags first with `cmp`, `adds`, `subs`, etc.:**
 
 ```asm
 cmp  x0, #10
@@ -1148,7 +1148,7 @@ Opcode 229 is a label marker used internally by the assembler and never written 
 
 ## Bytecode Format
 
-`.wassm` files are plain text — one instruction per line. You can open them in any text editor.
+`.wassm` files are plain text - one instruction per line. You can open them in any text editor.
 
 **Header:**
 
@@ -1163,13 +1163,13 @@ Opcode 229 is a label marker used internally by the assembler and never written 
 
 Each line starts with the opcode number followed by space-separated operand tokens:
 
-- Registers: `family:number` — e.g. `0:0` = `x0`, `1:1` = `w1`, `2:0` = `sp`
+- Registers: `family:number` - e.g. `0:0` = `x0`, `1:1` = `w1`, `2:0` = `sp`
 - Immediates: plain decimal integers
 - Mode flags: `R` (register operand), `I` (immediate), `M` (memory)
 - Strings: spaces encoded as `\~`, all other escapes (`\n`, `\t`, `\\`) kept as-is
 - Labels: resolved to the integer line index of the target instruction
 
-**Example — the "Hello, World!" program from above:**
+**Example - the "Hello, World!" program from above:**
 
 ```
 ; WebAssembler Bytecode v1.0
