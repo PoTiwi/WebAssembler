@@ -6,9 +6,6 @@
 #include <errno.h>
 #include <stdint.h>
 
-/* =========================================================
- * Constants
- * ========================================================= */
 #define MAX_LINE      4096
 #define MAX_TOKENS    64
 #define MAX_LABELS    4096
@@ -245,7 +242,6 @@ typedef enum {
     OP_STRLEN = 226,
     OP_ITOA   = 227,
     OP_ATOI   = 228,
-    /* 229 = label pseudo, not emitted */
     OP_CALL   = 230,
     OP_JMP    = 231,
     OP_JEQ    = 232,
@@ -263,39 +259,28 @@ typedef enum {
     OP_ASCIZ  = 244
 } Opcode;
 
-/* =========================================================
- * Register encoding
- *   family: 0=x, 1=w, 2=sp, 3=lr, 4=pc, 5=xzr, 6=wzr,
- *           7=fp(x29), 8=ip0(x16), 9=ip1(x17)
- *           10=d (float64), 11=s (float32), 12=q (128-bit)
- *           13=v (vector)
- * ========================================================= */
 typedef struct {
-    int family;   /* 0=x,1=w,2=sp,3=lr,4=pc,5=xzr,6=wzr,7=fp,8=ip0,9=ip1,10=d,11=s,12=q,13=v */
-    int number;   /* 0-30 for general; -1 for special regs */
+    int family;                                                                                
+    int number;                                              
 } RegInfo;
 
-/* =========================================================
- * Label table
- * ========================================================= */
 typedef struct {
     char  name[TOKEN_MAX];
-    int   line_index;   /* bytecode line index where this label lands */
+    int   line_index;                                                   
 } Label;
 
 static Label  labels[MAX_LABELS];
 static int    label_count = 0;
 
 typedef struct {
-    int   bytecode_line;   /* which output line has the placeholder */
-    int   token_index;     /* which token in that line is the label ref */
+    int   bytecode_line;                                              
+    int   token_index;                                                    
     char  label_name[TOKEN_MAX];
 } Fixup;
 
 static Fixup  fixups[MAX_FIXUPS];
 static int    fixup_count = 0;
 
-/* Output lines buffer */
 typedef struct {
     char  line[MAX_LINE];
 } OutLine;
@@ -303,36 +288,22 @@ typedef struct {
 static OutLine  out_lines[MAX_INSTRS];
 static int      out_count = 0;
 
-/* =========================================================
- * Utility: strip leading/trailing whitespace in place
- * ========================================================= */
 static void strip(char *s) {
-    /* leading */
     int start = 0;
     while (s[start] && isspace((unsigned char)s[start])) start++;
     if (start > 0) memmove(s, s + start, strlen(s) - start + 1);
-    /* trailing */
     int len = (int)strlen(s);
     while (len > 0 && isspace((unsigned char)s[len-1])) s[--len] = '\0';
 }
 
-/* =========================================================
- * Utility: lowercase a string in place
- * ========================================================= */
 static void to_lower(char *s) {
     for (; *s; s++) *s = (char)tolower((unsigned char)*s);
 }
 
-/* =========================================================
- * Parse a register token.
- * Returns 1 on success, 0 on failure.
- * Encodes as "FAMILY NUMBER" in out_family/out_num.
- * ========================================================= */
 static int parse_register(const char *tok, int *out_family, int *out_num) {
     char tmp[TOKEN_MAX];
     strncpy(tmp, tok, TOKEN_MAX-1);
     tmp[TOKEN_MAX-1] = '\0';
-    /* strip trailing comma, bracket, etc */
     int len = (int)strlen(tmp);
     while (len > 0 && (tmp[len-1] == ',' || tmp[len-1] == ']' ||
                         tmp[len-1] == '!' || tmp[len-1] == ' ')) {
@@ -340,7 +311,6 @@ static int parse_register(const char *tok, int *out_family, int *out_num) {
     }
     to_lower(tmp);
 
-    /* Special registers */
     if (strcmp(tmp, "sp")  == 0) { *out_family = 2; *out_num = 31; return 1; }
     if (strcmp(tmp, "lr")  == 0) { *out_family = 3; *out_num = 30; return 1; }
     if (strcmp(tmp, "pc")  == 0) { *out_family = 4; *out_num = 32; return 1; }
@@ -350,32 +320,26 @@ static int parse_register(const char *tok, int *out_family, int *out_num) {
     if (strcmp(tmp, "ip0") == 0) { *out_family = 8; *out_num = 16; return 1; }
     if (strcmp(tmp, "ip1") == 0) { *out_family = 9; *out_num = 17; return 1; }
 
-    /* x0-x30 */
     if (tmp[0] == 'x' && isdigit((unsigned char)tmp[1])) {
         int n = atoi(tmp + 1);
         if (n >= 0 && n <= 30) { *out_family = 0; *out_num = n; return 1; }
     }
-    /* w0-w30 */
     if (tmp[0] == 'w' && isdigit((unsigned char)tmp[1])) {
         int n = atoi(tmp + 1);
         if (n >= 0 && n <= 30) { *out_family = 1; *out_num = n; return 1; }
     }
-    /* d0-d31 (float64) */
     if (tmp[0] == 'd' && isdigit((unsigned char)tmp[1])) {
         int n = atoi(tmp + 1);
         if (n >= 0 && n <= 31) { *out_family = 10; *out_num = n; return 1; }
     }
-    /* s0-s31 (float32) */
     if (tmp[0] == 's' && isdigit((unsigned char)tmp[1])) {
         int n = atoi(tmp + 1);
         if (n >= 0 && n <= 31) { *out_family = 11; *out_num = n; return 1; }
     }
-    /* q0-q31 (128-bit) */
     if (tmp[0] == 'q' && isdigit((unsigned char)tmp[1])) {
         int n = atoi(tmp + 1);
         if (n >= 0 && n <= 31) { *out_family = 12; *out_num = n; return 1; }
     }
-    /* v0-v31 (vector) */
     if (tmp[0] == 'v' && isdigit((unsigned char)tmp[1])) {
         int n = atoi(tmp + 1);
         if (n >= 0 && n <= 31) { *out_family = 13; *out_num = n; return 1; }
@@ -383,20 +347,14 @@ static int parse_register(const char *tok, int *out_family, int *out_num) {
     return 0;
 }
 
-/* Helper: encode register as "FAMILY:NUM" string */
 static void reg_str(int family, int num, char *out) {
     sprintf(out, "%d:%d", family, num);
 }
 
-/* =========================================================
- * Parse an immediate value token (#N or #0xN or plain N)
- * Returns the value as a long long.
- * ========================================================= */
 static long long parse_imm(const char *tok) {
     char tmp[TOKEN_MAX];
     strncpy(tmp, tok, TOKEN_MAX-1);
     tmp[TOKEN_MAX-1] = '\0';
-    /* strip trailing comma/bracket */
     int len = (int)strlen(tmp);
     while (len > 0 && (tmp[len-1]==',' || tmp[len-1]==']' || tmp[len-1]=='!'))
         tmp[--len] = '\0';
@@ -407,16 +365,10 @@ static long long parse_imm(const char *tok) {
     return (long long)strtoll(p, NULL, 10);
 }
 
-/* =========================================================
- * Tokenizer: splits a line at commas/spaces.
- * Respects quoted strings as single tokens.
- * Strips comments (semicolons outside quotes).
- * ========================================================= */
 static int tokenize(char *line, char tokens[][TOKEN_MAX], int max_toks) {
     int count = 0;
     char *p = line;
 
-    /* strip semicolon comment (outside quotes) */
     int in_q = 0;
     for (char *c = line; *c; c++) {
         if (*c == '"') in_q = !in_q;
@@ -426,17 +378,14 @@ static int tokenize(char *line, char tokens[][TOKEN_MAX], int max_toks) {
     if (!*line) return 0;
 
     while (*p && count < max_toks) {
-        /* skip whitespace and commas */
         while (*p && (isspace((unsigned char)*p) || *p == ',')) p++;
         if (!*p) break;
 
         if (*p == '"') {
-            /* quoted string token */
-            p++; /* skip opening quote */
+            p++;                         
             int ti = 0;
-            tokens[count][ti++] = '"';  /* keep marker */
+            tokens[count][ti++] = '"';                   
             while (*p && *p != '"' && ti < TOKEN_MAX-2) {
-                /* handle escape sequences */
                 if (*p == '\\' && *(p+1)) {
                     p++;
                     switch (*p) {
@@ -453,11 +402,10 @@ static int tokenize(char *line, char tokens[][TOKEN_MAX], int max_toks) {
                 }
                 p++;
             }
-            if (*p == '"') p++; /* skip closing quote */
+            if (*p == '"') p++;                         
             tokens[count][ti] = '\0';
             count++;
         } else if (*p == '[') {
-            /* bracket group — keep as one token */
             int ti = 0;
             while (*p && *p != ']' && ti < TOKEN_MAX-2)
                 tokens[count][ti++] = *p++;
@@ -466,7 +414,6 @@ static int tokenize(char *line, char tokens[][TOKEN_MAX], int max_toks) {
             tokens[count][ti] = '\0';
             count++;
         } else {
-            /* normal token */
             int ti = 0;
             while (*p && !isspace((unsigned char)*p) && *p != ',' &&
                    *p != '[' && ti < TOKEN_MAX-2)
@@ -478,9 +425,6 @@ static int tokenize(char *line, char tokens[][TOKEN_MAX], int max_toks) {
     return count;
 }
 
-/* =========================================================
- * Label resolution
- * ========================================================= */
 static void add_label(const char *name, int line_idx) {
     if (label_count >= MAX_LABELS) {
         fprintf(stderr, "Error: too many labels\n");
@@ -510,9 +454,6 @@ static void add_fixup(int bytecode_line, int token_index, const char *lname) {
     fixup_count++;
 }
 
-/* =========================================================
- * Emit a bytecode line
- * ========================================================= */
 static int emit(const char *fmt, ...) {
     if (out_count >= MAX_INSTRS) {
         fprintf(stderr, "Error: too many instructions\n");
@@ -525,13 +466,8 @@ static int emit(const char *fmt, ...) {
     return out_count++;
 }
 
-/* =========================================================
- * Emit a string payload safely (escape spaces/newlines so
- * the VM can parse it back from a single token)
- * ========================================================= */
 static void escape_string(const char *src, char *dst, int maxlen) {
     int di = 0;
-    /* src[0] == '"' marker from tokenizer */
     const char *p = src;
     if (*p == '"') p++;
     while (*p && di < maxlen - 4) {
@@ -547,28 +483,19 @@ static void escape_string(const char *src, char *dst, int maxlen) {
     dst[di] = '\0';
 }
 
-/* =========================================================
- * Check if a token looks like a label reference
- * (not a register, not an immediate, not a string)
- * ========================================================= */
 static int is_label_ref(const char *tok) {
     if (!tok || !*tok) return 0;
     if (tok[0] == '#') return 0;
     if (tok[0] == '"') return 0;
     if (tok[0] == '[') return 0;
-    /* If it parses as a register, it's not a label */
     int f, n;
     if (parse_register(tok, &f, &n)) return 0;
-    /* If it's a pure number, not a label */
     char *end;
     strtoll(tok, &end, 10);
     if (*end == '\0') return 0;
     return 1;
 }
 
-/* =========================================================
- * Condition code string → integer for b.cond variants
- * ========================================================= */
 static int cond_str_to_int(const char *cc) {
     if (strcmp(cc,"eq")==0) return 0;
     if (strcmp(cc,"ne")==0) return 1;
@@ -589,9 +516,6 @@ static int cond_str_to_int(const char *cc) {
     return -1;
 }
 
-/* =========================================================
- * Main compile pass
- * ========================================================= */
 static void compile_line(const char *raw_line, int *src_lineno) {
     char line[MAX_LINE];
     strncpy(line, raw_line, MAX_LINE-1);
@@ -602,16 +526,14 @@ static void compile_line(const char *raw_line, int *src_lineno) {
     int  ntok = tokenize(line, tokens, MAX_TOKENS);
     if (ntok == 0) return;
 
-    /* Check for label definition: "labelname:" */
     char *first = tokens[0];
     int flen = (int)strlen(first);
     if (first[flen-1] == ':') {
         char lname[TOKEN_MAX];
         strncpy(lname, first, TOKEN_MAX-1);
         lname[TOKEN_MAX-1] = '\0';
-        lname[strlen(lname)-1] = '\0'; /* strip colon */
+        lname[strlen(lname)-1] = '\0';                  
         add_label(lname, out_count);
-        /* If there are more tokens after the label, process them */
         if (ntok > 1) {
             char rest[MAX_LINE] = {0};
             for (int i = 1; i < ntok; i++) {
@@ -623,13 +545,11 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* Lowercase the mnemonic for comparison */
     char mnem[TOKEN_MAX];
     strncpy(mnem, tokens[0], TOKEN_MAX-1);
     mnem[TOKEN_MAX-1] = '\0';
     to_lower(mnem);
 
-    /* Helper macros for register encoding */
     #define REG(idx) \
         ({ int _f, _n; \
            if (!parse_register(tokens[idx], &_f, &_n)) { \
@@ -638,10 +558,8 @@ static void compile_line(const char *raw_line, int *src_lineno) {
            } \
            char _rs[32]; reg_str(_f, _n, _rs); _rs; })
 
-    /* Because REG uses a GCC extension, let's use a function-style instead */
     #undef REG
 
-    /* We'll use a helper inline approach: */
     char r0[32], r1[32], r2[32], r3[32];
     int  f0, n0, f1, n1, f2, n2, f3, n3;
 
@@ -653,11 +571,7 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         reg_str(fv, nv, rs); \
     } while(0)
 
-    /* =====================================================
-     * CUSTOM INSTRUCTIONS
-     * ===================================================== */
 
-    /* lds REG, "string" */
     if (strcmp(mnem, "lds") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: lds needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -667,7 +581,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* adl DEST, SRC — dest = strlen(src) */
     if (strcmp(mnem, "adl") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: adl needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -676,7 +589,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* strlen DEST, SRC — alias for adl */
     if (strcmp(mnem, "strlen") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: strlen needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -685,7 +597,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* swp REG, REG */
     if (strcmp(mnem, "swp") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: swp needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -694,7 +605,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* dmp REG */
     if (strcmp(mnem, "dmp") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: dmp needs 1 operand\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -702,13 +612,11 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* halt */
     if (strcmp(mnem, "halt") == 0) {
         emit("%d", OP_HALT);
         return;
     }
 
-    /* puts REG */
     if (strcmp(mnem, "puts") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: puts needs 1 operand\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -716,7 +624,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* geti REG */
     if (strcmp(mnem, "geti") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: geti needs 1 operand\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -724,7 +631,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* gets REG */
     if (strcmp(mnem, "gets") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: gets needs 1 operand\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -732,7 +638,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* rand REG */
     if (strcmp(mnem, "rand") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: rand needs 1 operand\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -740,7 +645,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* time REG */
     if (strcmp(mnem, "time") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: time needs 1 operand\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -748,7 +652,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* clrr REG */
     if (strcmp(mnem, "clrr") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: clrr needs 1 operand\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -756,7 +659,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* inc REG */
     if (strcmp(mnem, "inc") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: inc needs 1 operand\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -764,7 +666,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* dec REG */
     if (strcmp(mnem, "dec") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: dec needs 1 operand\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -772,7 +673,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* abs REG */
     if (strcmp(mnem, "abs") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: abs needs 1 operand\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -780,7 +680,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* max2 DEST, SRC1, SRC2 */
     if (strcmp(mnem, "max2") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: max2 needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -788,7 +687,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* min2 DEST, SRC1, SRC2 */
     if (strcmp(mnem, "min2") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: min2 needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -796,7 +694,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* mod DEST, SRC1, SRC2 */
     if (strcmp(mnem, "mod") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: mod needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -804,7 +701,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* not REG */
     if (strcmp(mnem, "not") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: not needs 1 operand\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -812,7 +708,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* shl REG, IMM */
     if (strcmp(mnem, "shl") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: shl needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -820,7 +715,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* shr REG, IMM */
     if (strcmp(mnem, "shr") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: shr needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -828,7 +722,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* memcpy DEST_REG, SRC_REG, LEN_REG */
     if (strcmp(mnem, "memcpy") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: memcpy needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -836,7 +729,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* memset DEST_REG, VAL_REG, LEN_REG */
     if (strcmp(mnem, "memset") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: memset needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -844,7 +736,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* strcpy DEST_REG, SRC_REG */
     if (strcmp(mnem, "strcpy") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: strcpy needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -852,7 +743,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* strcat DEST_REG, SRC_REG */
     if (strcmp(mnem, "strcat") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: strcat needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -860,7 +750,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* strcmp DEST_REG, SRC1_REG, SRC2_REG */
     if (strcmp(mnem, "strcmp") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: strcmp needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -868,7 +757,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* itoa DEST_REG, SRC_REG */
     if (strcmp(mnem, "itoa") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: itoa needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -876,7 +764,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* atoi DEST_REG, SRC_REG */
     if (strcmp(mnem, "atoi") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: atoi needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -884,7 +771,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* call LABEL (alias for bl) */
     if (strcmp(mnem, "call") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: call needs label\n",*src_lineno); exit(1); }
         int ln = emit("%d FIXUP", OP_CALL);
@@ -892,7 +778,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* jmp LABEL (alias for b) */
     if (strcmp(mnem, "jmp") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: jmp needs label\n",*src_lineno); exit(1); }
         int ln = emit("%d FIXUP", OP_JMP);
@@ -900,7 +785,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* jeq/jne/jlt/jle/jgt/jge LABEL */
     if (strcmp(mnem, "jeq") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: jeq needs label\n",*src_lineno); exit(1); }
         int ln = emit("%d FIXUP", OP_JEQ);
@@ -938,9 +822,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* =====================================================
-     * PSEUDO-DIRECTIVES
-     * ===================================================== */
     if (strcmp(mnem, ".align") == 0) {
         long long n = (ntok > 1) ? parse_imm(tokens[1]) : 4;
         emit("%d %lld", OP_ALIGN, n);
@@ -981,28 +862,22 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* =====================================================
-     * AArch64 STANDARD INSTRUCTIONS
-     * ===================================================== */
 
-    /* nop */
     if (strcmp(mnem, "nop") == 0) {
         emit("%d", OP_NOP);
         return;
     }
 
-    /* ret [REG] */
     if (strcmp(mnem, "ret") == 0) {
         if (ntok > 1) {
             PARSE_REG(1, f0, n0, r0);
             emit("%d %s", OP_RET, r0);
         } else {
-            emit("%d 3:30", OP_RET); /* default: lr */
+            emit("%d 3:30", OP_RET);                  
         }
         return;
     }
 
-    /* mov DEST, SRC_or_IMM */
     if (strcmp(mnem, "mov") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: mov needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -1016,7 +891,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* movz DEST, IMM [, LSL #SHIFT] */
     if (strcmp(mnem, "movz") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: movz needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -1027,7 +901,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* movn DEST, IMM [, LSL #SHIFT] */
     if (strcmp(mnem, "movn") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: movn needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -1038,7 +911,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* movk DEST, IMM [, LSL #SHIFT] */
     if (strcmp(mnem, "movk") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: movk needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -1049,7 +921,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* mvn DEST, SRC */
     if (strcmp(mnem, "mvn") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: mvn needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -1057,28 +928,23 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* ldr DEST, [BASE {, #OFFSET}] or ldr DEST, REG (our custom: load string ptr) */
     if (strcmp(mnem, "ldr") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: ldr needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
-        /* Check: is operand 2 a register (not bracket)? → custom ldr from register */
         int f1t, n1t;
         if (parse_register(tokens[2], &f1t, &n1t)) {
             reg_str(f1t, n1t, r1);
             emit("%d %s R %s 0", OP_LDR, r0, r1);
             return;
         }
-        /* bracket form: [BASE] or [BASE, #off] */
         char base_tok[TOKEN_MAX];
         long long offset = 0;
         char tmp2[TOKEN_MAX];
         strncpy(tmp2, tokens[2], TOKEN_MAX-1);
-        /* strip brackets */
         int tl = (int)strlen(tmp2);
         if (tmp2[0]=='[') memmove(tmp2, tmp2+1, tl--);
         if (tl>0 && tmp2[tl-1]==']') { tmp2[tl-1]='\0'; tl--; }
         if (tl>0 && tmp2[tl-1]=='!') { tmp2[tl-1]='\0'; tl--; }
-        /* If this bracket token contains comma, split */
         char *comma = strchr(tmp2, ',');
         if (comma) {
             *comma = '\0';
@@ -1086,7 +952,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         }
         strncpy(base_tok, tmp2, TOKEN_MAX-1);
         strip(base_tok);
-        /* check for extra offset token */
         if (ntok >= 4 && comma == NULL) {
             offset = parse_imm(tokens[3]);
         }
@@ -1099,7 +964,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* str SRC, [BASE {, #OFFSET}] */
     if (strcmp(mnem, "str") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: str needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -1123,7 +987,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* ldrb DEST, [BASE, #OFF] */
     if (strcmp(mnem, "ldrb") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: ldrb needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -1142,7 +1005,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* ldrh DEST, [BASE, #OFF] */
     if (strcmp(mnem, "ldrh") == 0) {
         PARSE_REG(1, f0, n0, r0);
         char tmp2[TOKEN_MAX]; strncpy(tmp2,tokens[2],TOKEN_MAX-1);
@@ -1156,7 +1018,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* ldrsb */
     if (strcmp(mnem, "ldrsb") == 0) {
         PARSE_REG(1, f0, n0, r0);
         char tmp2[TOKEN_MAX]; strncpy(tmp2,tokens[2],TOKEN_MAX-1);
@@ -1170,7 +1031,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* ldrsh */
     if (strcmp(mnem, "ldrsh") == 0) {
         PARSE_REG(1, f0, n0, r0);
         char tmp2[TOKEN_MAX]; strncpy(tmp2,tokens[2],TOKEN_MAX-1);
@@ -1184,7 +1044,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* ldrsw */
     if (strcmp(mnem, "ldrsw") == 0) {
         PARSE_REG(1, f0, n0, r0);
         char tmp2[TOKEN_MAX]; strncpy(tmp2,tokens[2],TOKEN_MAX-1);
@@ -1198,7 +1057,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* strb SRC, [BASE, #OFF] */
     if (strcmp(mnem, "strb") == 0) {
         PARSE_REG(1, f0, n0, r0);
         char tmp2[TOKEN_MAX]; strncpy(tmp2,tokens[2],TOKEN_MAX-1);
@@ -1212,7 +1070,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* strh */
     if (strcmp(mnem, "strh") == 0) {
         PARSE_REG(1, f0, n0, r0);
         char tmp2[TOKEN_MAX]; strncpy(tmp2,tokens[2],TOKEN_MAX-1);
@@ -1226,7 +1083,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* ldp R1, R2, [BASE, #OFF] */
     if (strcmp(mnem, "ldp") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: ldp needs 3+ operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -1242,7 +1098,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* stp R1, R2, [BASE, #OFF] */
     if (strcmp(mnem, "stp") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: stp needs 3+ operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -1258,7 +1113,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* add DEST, SRC1, SRC2_or_IMM [, SHIFT #AMT] */
     if (strcmp(mnem, "add") == 0 || strcmp(mnem, "adds") == 0) {
         int op = (strcmp(mnem,"adds")==0) ? OP_ADDS : OP_ADD;
         if (ntok < 4) { fprintf(stderr,"Line %d: add/adds needs 3 operands\n",*src_lineno); exit(1); }
@@ -1266,7 +1120,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         int f2t, n2t;
         if (parse_register(tokens[3], &f2t, &n2t)) {
             reg_str(f2t, n2t, r2);
-            /* optional shift */
             char shift_type[16] = "none"; long long shift_amt = 0;
             if (ntok >= 6) { strncpy(shift_type, tokens[4], 15); shift_amt = parse_imm(tokens[5]); }
             emit("%d %s %s R %s %s %lld", op, r0, r1, r2, shift_type, shift_amt);
@@ -1276,7 +1129,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* sub DEST, SRC1, SRC2_or_IMM */
     if (strcmp(mnem, "sub") == 0 || strcmp(mnem, "subs") == 0) {
         int op = (strcmp(mnem,"subs")==0) ? OP_SUBS : OP_SUB;
         if (ntok < 4) { fprintf(stderr,"Line %d: sub needs 3 operands\n",*src_lineno); exit(1); }
@@ -1293,7 +1145,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* mul DEST, SRC1, SRC2 */
     if (strcmp(mnem, "mul") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: mul needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -1301,7 +1152,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* udiv DEST, SRC1, SRC2 */
     if (strcmp(mnem, "udiv") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: udiv needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -1309,7 +1159,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* sdiv DEST, SRC1, SRC2 */
     if (strcmp(mnem, "sdiv") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: sdiv needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -1317,7 +1166,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* and/ands DEST, SRC1, SRC2_or_IMM */
     if (strcmp(mnem, "and") == 0 || strcmp(mnem, "ands") == 0) {
         int op = (strcmp(mnem,"ands")==0) ? OP_ANDS : OP_AND;
         if (ntok < 4) { fprintf(stderr,"Line %d: and needs 3 operands\n",*src_lineno); exit(1); }
@@ -1329,7 +1177,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* orr DEST, SRC1, SRC2_or_IMM */
     if (strcmp(mnem, "orr") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: orr needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -1340,7 +1187,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* orn DEST, SRC1, SRC2 */
     if (strcmp(mnem, "orn") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: orn needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -1348,7 +1194,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* eor DEST, SRC1, SRC2_or_IMM */
     if (strcmp(mnem, "eor") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: eor needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -1359,7 +1204,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* eon DEST, SRC1, SRC2 */
     if (strcmp(mnem, "eon") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: eon needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -1367,7 +1211,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* bic/bics DEST, SRC1, SRC2 */
     if (strcmp(mnem, "bic") == 0 || strcmp(mnem, "bics") == 0) {
         int op = (strcmp(mnem,"bics")==0) ? OP_BICS : OP_BIC;
         if (ntok < 4) { fprintf(stderr,"Line %d: bic needs 3 operands\n",*src_lineno); exit(1); }
@@ -1376,7 +1219,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* lsl DEST, SRC, IMM_or_REG */
     if (strcmp(mnem, "lsl") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: lsl needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -1387,7 +1229,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* lsr DEST, SRC, IMM_or_REG */
     if (strcmp(mnem, "lsr") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: lsr needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -1398,7 +1239,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* asr DEST, SRC, IMM_or_REG */
     if (strcmp(mnem, "asr") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: asr needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -1409,7 +1249,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* ror DEST, SRC, IMM_or_REG */
     if (strcmp(mnem, "ror") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: ror needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -1420,7 +1259,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* cmp SRC1, SRC2_or_IMM */
     if (strcmp(mnem, "cmp") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: cmp needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -1431,7 +1269,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* cmn SRC1, SRC2_or_IMM */
     if (strcmp(mnem, "cmn") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: cmn needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -1442,7 +1279,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* tst SRC1, SRC2_or_IMM */
     if (strcmp(mnem, "tst") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: tst needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -1453,7 +1289,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* neg/negs DEST, SRC */
     if (strcmp(mnem, "neg") == 0 || strcmp(mnem, "negs") == 0) {
         int op = (strcmp(mnem,"negs")==0) ? OP_NEGS : OP_NEG;
         if (ntok < 3) { fprintf(stderr,"Line %d: neg needs 2 operands\n",*src_lineno); exit(1); }
@@ -1462,7 +1297,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* adc/adcs DEST, SRC1, SRC2 */
     if (strcmp(mnem, "adc") == 0 || strcmp(mnem, "adcs") == 0) {
         int op = (strcmp(mnem,"adcs")==0) ? OP_ADCS : OP_ADC;
         if (ntok < 4) { fprintf(stderr,"Line %d: adc needs 3 operands\n",*src_lineno); exit(1); }
@@ -1471,7 +1305,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* sbc/sbcs DEST, SRC1, SRC2 */
     if (strcmp(mnem, "sbc") == 0 || strcmp(mnem, "sbcs") == 0) {
         int op = (strcmp(mnem,"sbcs")==0) ? OP_SBCS : OP_SBC;
         if (ntok < 4) { fprintf(stderr,"Line %d: sbc needs 3 operands\n",*src_lineno); exit(1); }
@@ -1480,7 +1313,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* madd DEST, SRC1, SRC2, SRC3 */
     if (strcmp(mnem, "madd") == 0) {
         if (ntok < 5) { fprintf(stderr,"Line %d: madd needs 4 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -1489,7 +1321,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* msub DEST, SRC1, SRC2, SRC3 */
     if (strcmp(mnem, "msub") == 0) {
         if (ntok < 5) { fprintf(stderr,"Line %d: msub needs 4 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -1498,7 +1329,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* mneg DEST, SRC1, SRC2 */
     if (strcmp(mnem, "mneg") == 0) {
         if (ntok < 4) { fprintf(stderr,"Line %d: mneg needs 3 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -1506,7 +1336,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* smull/umull/smulh/umulh DEST, SRC1, SRC2 */
     if (strcmp(mnem,"smull")==0||strcmp(mnem,"umull")==0||
         strcmp(mnem,"smulh")==0||strcmp(mnem,"umulh")==0) {
         int op = strcmp(mnem,"smull")==0 ? OP_SMULL :
@@ -1518,7 +1347,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* smaddl/umaddl/smsubl/umsubl DEST, SRC1, SRC2, SRC3 */
     if (strcmp(mnem,"smaddl")==0||strcmp(mnem,"umaddl")==0||
         strcmp(mnem,"smsubl")==0||strcmp(mnem,"umsubl")==0) {
         int op = strcmp(mnem,"smaddl")==0 ? OP_SMADDL :
@@ -1531,7 +1359,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* Branch instructions */
     if (strcmp(mnem, "b") == 0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: b needs label\n",*src_lineno); exit(1); }
         int ln = emit("%d FIXUP", OP_B);
@@ -1560,14 +1387,9 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* b.cond LABEL — handle all condition variants */
-    /* b.eq, b.ne, b.lt, b.le, b.gt, b.ge, b.lo, b.ls, b.hi, b.hs,
-       b.mi, b.pl, b.vs, b.vc, b.al */
-    /* Also handle without dot: beq, bne, etc. */
     {
         int bcond_op = -1;
         const char *lpart = mnem;
-        /* strip "b." prefix or handle "b<cc>" */
         if (mnem[0]=='b' && mnem[1]=='.') lpart = mnem+2;
         else if (mnem[0]=='b' && strlen(mnem)==3) lpart = mnem+1;
         else lpart = NULL;
@@ -1597,7 +1419,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         }
     }
 
-    /* cbz/cbnz REG, LABEL */
     if (strcmp(mnem, "cbz") == 0 || strcmp(mnem, "cbnz") == 0) {
         int op = (strcmp(mnem,"cbnz")==0) ? OP_CBNZ : OP_CBZ;
         if (ntok < 3) { fprintf(stderr,"Line %d: cbz/cbnz needs reg+label\n",*src_lineno); exit(1); }
@@ -1607,7 +1428,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* tbz/tbnz REG, #BIT, LABEL */
     if (strcmp(mnem, "tbz") == 0 || strcmp(mnem, "tbnz") == 0) {
         int op = (strcmp(mnem,"tbnz")==0) ? OP_TBNZ : OP_TBZ;
         if (ntok < 4) { fprintf(stderr,"Line %d: tbz/tbnz needs reg, bit, label\n",*src_lineno); exit(1); }
@@ -1618,7 +1438,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* adr/adrp DEST, LABEL_or_IMM */
     if (strcmp(mnem, "adr") == 0 || strcmp(mnem, "adrp") == 0) {
         int op = (strcmp(mnem,"adrp")==0) ? OP_ADRP : OP_ADR;
         if (ntok < 3) { fprintf(stderr,"Line %d: adr needs 2 operands\n",*src_lineno); exit(1); }
@@ -1632,28 +1451,24 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* svc #IMM */
     if (strcmp(mnem, "svc") == 0) {
         long long imm = (ntok > 1) ? parse_imm(tokens[1]) : 0;
         emit("%d %lld", OP_SVC, imm);
         return;
     }
 
-    /* hlt #IMM */
     if (strcmp(mnem, "hlt") == 0) {
         long long imm = (ntok > 1) ? parse_imm(tokens[1]) : 0;
         emit("%d %lld", OP_HLT, imm);
         return;
     }
 
-    /* brk #IMM */
     if (strcmp(mnem, "brk") == 0) {
         long long imm = (ntok > 1) ? parse_imm(tokens[1]) : 0;
         emit("%d %lld", OP_BRK, imm);
         return;
     }
 
-    /* wfe, wfi, sev, sevl, isb, dsb, dmb, clrex, yield, eret, drps */
     if (strcmp(mnem,"wfe")==0)   { emit("%d", OP_WFE);   return; }
     if (strcmp(mnem,"wfi")==0)   { emit("%d", OP_WFI);   return; }
     if (strcmp(mnem,"sev")==0)   { emit("%d", OP_SEV);   return; }
@@ -1666,7 +1481,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
     if (strcmp(mnem,"eret")==0)  { emit("%d", OP_ERET);  return; }
     if (strcmp(mnem,"drps")==0)  { emit("%d", OP_DRPS);  return; }
 
-    /* mrs DEST, SYSREG */
     if (strcmp(mnem, "mrs") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: mrs needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -1674,7 +1488,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* msr SYSREG, SRC */
     if (strcmp(mnem, "msr") == 0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: msr needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(2, f1, n1, r1);
@@ -1682,10 +1495,8 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* sys / sysl */
     if (strcmp(mnem,"sys")==0||strcmp(mnem,"sysl")==0) {
         int op = strcmp(mnem,"sysl")==0 ? OP_SYSL : OP_SYS;
-        /* pass all tokens verbatim */
         char rest[MAX_LINE]="";
         for (int i=1; i<ntok; i++) {
             strcat(rest, tokens[i]);
@@ -1695,7 +1506,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* ic/dc/at/tlbi OP {, REG} */
     if (strcmp(mnem,"ic")==0||strcmp(mnem,"dc")==0||
         strcmp(mnem,"at")==0||strcmp(mnem,"tlbi")==0) {
         int op = strcmp(mnem,"ic")==0 ? OP_IC :
@@ -1711,7 +1521,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* clz/cls/rbit DEST, SRC */
     if (strcmp(mnem,"clz")==0||strcmp(mnem,"cls")==0||strcmp(mnem,"rbit")==0) {
         int op = strcmp(mnem,"clz")==0 ? OP_CLZ :
                  strcmp(mnem,"cls")==0 ? OP_CLS : OP_RBIT;
@@ -1721,7 +1530,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* rev/rev16/rev32/rev64 DEST, SRC */
     if (strcmp(mnem,"rev")==0||strcmp(mnem,"rev16")==0||
         strcmp(mnem,"rev32")==0||strcmp(mnem,"rev64")==0) {
         int op = strcmp(mnem,"rev")==0  ? OP_REV :
@@ -1733,7 +1541,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* extr DEST, SRC1, SRC2, #LSB */
     if (strcmp(mnem, "extr") == 0) {
         if (ntok < 5) { fprintf(stderr,"Line %d: extr needs 4 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -1742,7 +1549,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* sbfm/bfm/ubfm DEST, SRC, #IMMR, #IMMS */
     if (strcmp(mnem,"sbfm")==0||strcmp(mnem,"bfm")==0||strcmp(mnem,"ubfm")==0) {
         int op = strcmp(mnem,"sbfm")==0 ? OP_SBFM :
                  strcmp(mnem,"bfm")==0  ? OP_BFM  : OP_UBFM;
@@ -1753,7 +1559,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* sbfx/ubfx DEST, SRC, #LSB, #WIDTH */
     if (strcmp(mnem,"sbfx")==0||strcmp(mnem,"ubfx")==0) {
         int op = strcmp(mnem,"sbfx")==0 ? OP_SBFX : OP_UBFX;
         if (ntok < 5) { fprintf(stderr,"Line %d: needs 4 operands\n",*src_lineno); exit(1); }
@@ -1763,7 +1568,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* sbfiz/ubfiz DEST, SRC, #LSB, #WIDTH */
     if (strcmp(mnem,"sbfiz")==0||strcmp(mnem,"ubfiz")==0) {
         int op = strcmp(mnem,"sbfiz")==0 ? OP_SBFIZ : OP_UBFIZ;
         if (ntok < 5) { fprintf(stderr,"Line %d: needs 4 operands\n",*src_lineno); exit(1); }
@@ -1773,7 +1577,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* bfxil/bfi DEST, SRC, #LSB, #WIDTH */
     if (strcmp(mnem,"bfxil")==0||strcmp(mnem,"bfi")==0) {
         int op = strcmp(mnem,"bfxil")==0 ? OP_BFXIL : OP_BFI;
         if (ntok < 5) { fprintf(stderr,"Line %d: needs 4 operands\n",*src_lineno); exit(1); }
@@ -1783,7 +1586,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* sign/zero extension: sxtb/sxth/sxtw/uxtb/uxth DEST, SRC */
     if (strcmp(mnem,"sxtb")==0||strcmp(mnem,"sxth")==0||strcmp(mnem,"sxtw")==0||
         strcmp(mnem,"uxtb")==0||strcmp(mnem,"uxth")==0) {
         int op = strcmp(mnem,"sxtb")==0 ? OP_SXTB :
@@ -1796,7 +1598,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* Floating point: fmov DEST, SRC_or_IMM */
     if (strcmp(mnem,"fmov")==0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: fmov needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -1809,7 +1610,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* fadd/fsub/fmul/fdiv DEST, SRC1, SRC2 */
     if (strcmp(mnem,"fadd")==0||strcmp(mnem,"fsub")==0||
         strcmp(mnem,"fmul")==0||strcmp(mnem,"fdiv")==0) {
         int op = strcmp(mnem,"fadd")==0 ? OP_FADD :
@@ -1821,7 +1621,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* fabs/fneg/fsqrt DEST, SRC */
     if (strcmp(mnem,"fabs")==0||strcmp(mnem,"fneg")==0||strcmp(mnem,"fsqrt")==0) {
         int op = strcmp(mnem,"fabs")==0 ? OP_FABS :
                  strcmp(mnem,"fneg")==0 ? OP_FNEG : OP_FSQRT;
@@ -1831,7 +1630,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* fcmp/fcmpe SRC1, SRC2 */
     if (strcmp(mnem,"fcmp")==0||strcmp(mnem,"fcmpe")==0) {
         int op = strcmp(mnem,"fcmpe")==0 ? OP_FCMPE : OP_FCMP;
         if (ntok < 3) { fprintf(stderr,"Line %d: fcmp needs 2 operands\n",*src_lineno); exit(1); }
@@ -1840,12 +1638,11 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         if (parse_register(tokens[2], &f1t, &n1t)) {
             reg_str(f1t,n1t,r1); emit("%d %s R %s", op, r0, r1);
         } else {
-            emit("%d %s I 0", op, r0); /* fcmp with #0.0 */
+            emit("%d %s I 0", op, r0);                     
         }
         return;
     }
 
-    /* fccmp/fccmpe SRC1, SRC2, #NZCV, COND */
     if (strcmp(mnem,"fccmp")==0||strcmp(mnem,"fccmpe")==0) {
         int op = strcmp(mnem,"fccmpe")==0 ? OP_FCCMPE : OP_FCCMP;
         if (ntok < 5) { fprintf(stderr,"Line %d: fccmp needs 4 operands\n",*src_lineno); exit(1); }
@@ -1855,7 +1652,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* fcsel DEST, SRC1, SRC2, COND */
     if (strcmp(mnem,"fcsel")==0) {
         if (ntok < 5) { fprintf(stderr,"Line %d: fcsel needs 4 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1); PARSE_REG(3, f2, n2, r2);
@@ -1863,7 +1659,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* fcvt DEST, SRC */
     if (strcmp(mnem,"fcvt")==0) {
         if (ntok < 3) { fprintf(stderr,"Line %d: fcvt needs 2 operands\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0); PARSE_REG(2, f1, n1, r1);
@@ -1871,7 +1666,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* fcvt* DEST, SRC (all conversion variants) */
     #define FCVT_VARIANT(name, opcode) \
     if (strcmp(mnem, name)==0) { \
         if (ntok < 3) { fprintf(stderr,"Line %d: needs 2 operands\n",*src_lineno); exit(1); } \
@@ -1892,7 +1686,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
     FCVT_VARIANT("ucvtf",  OP_UCVTF)
     #undef FCVT_VARIANT
 
-    /* fmadd/fmsub/fnmadd/fnmsub DEST, SRC1, SRC2, SRC3 */
     if (strcmp(mnem,"fmadd")==0||strcmp(mnem,"fmsub")==0||
         strcmp(mnem,"fnmadd")==0||strcmp(mnem,"fnmsub")==0) {
         int op = strcmp(mnem,"fmadd")==0  ? OP_FMADD :
@@ -1905,7 +1698,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* fmin/fmax/fminnm/fmaxnm DEST, SRC1, SRC2 */
     if (strcmp(mnem,"fmin")==0||strcmp(mnem,"fmax")==0||
         strcmp(mnem,"fminnm")==0||strcmp(mnem,"fmaxnm")==0) {
         int op = strcmp(mnem,"fmin")==0   ? OP_FMIN :
@@ -1917,7 +1709,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* Conditional select: csel/csinc/csinv/csneg DEST, SRC1, SRC2, COND */
     if (strcmp(mnem,"csel")==0||strcmp(mnem,"csinc")==0||
         strcmp(mnem,"csinv")==0||strcmp(mnem,"csneg")==0) {
         int op = strcmp(mnem,"csel")==0  ? OP_CSEL  :
@@ -1929,7 +1720,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* cset/csetm DEST, COND */
     if (strcmp(mnem,"cset")==0||strcmp(mnem,"csetm")==0) {
         int op = strcmp(mnem,"csetm")==0 ? OP_CSETM : OP_CSET;
         if (ntok < 3) { fprintf(stderr,"Line %d: needs 2 operands\n",*src_lineno); exit(1); }
@@ -1938,7 +1728,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* cinc/cinv/cneg DEST, SRC, COND */
     if (strcmp(mnem,"cinc")==0||strcmp(mnem,"cinv")==0||strcmp(mnem,"cneg")==0) {
         int op = strcmp(mnem,"cinc")==0 ? OP_CINC :
                  strcmp(mnem,"cinv")==0 ? OP_CINV : OP_CNEG;
@@ -1948,7 +1737,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* ccmp/ccmn SRC1, SRC2_or_IMM, #NZCV, COND */
     if (strcmp(mnem,"ccmp")==0||strcmp(mnem,"ccmn")==0) {
         int op = strcmp(mnem,"ccmn")==0 ? OP_CCMN : OP_CCMP;
         if (ntok < 5) { fprintf(stderr,"Line %d: ccmp needs 4 operands\n",*src_lineno); exit(1); }
@@ -1967,7 +1755,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* Atomic / exclusive access instructions */
     #define ATOMIC1(name, opcode) \
     if (strcmp(mnem, name)==0) { \
         if (ntok < 3) { fprintf(stderr,"Line %d: needs 2 operands\n",*src_lineno); exit(1); } \
@@ -1994,7 +1781,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
     ATOMIC1("stlrh", OP_STLRH)
     #undef ATOMIC1
 
-    /* stlxr/stlxrb/stlxrh/stxr/stxrb/stxrh STATUS, SRC, [BASE] */
     #define ATOMIC2(name, opcode) \
     if (strcmp(mnem, name)==0) { \
         if (ntok < 4) { fprintf(stderr,"Line %d: needs 3 operands\n",*src_lineno); exit(1); } \
@@ -2015,7 +1801,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
     ATOMIC2("stxrh",  OP_STXRH)
     #undef ATOMIC2
 
-    /* ldxp/ldaxp DEST1, DEST2, [BASE] */
     if (strcmp(mnem,"ldxp")==0||strcmp(mnem,"ldaxp")==0) {
         int op = strcmp(mnem,"ldaxp")==0 ? OP_LDAXP : OP_LDXP;
         if (ntok < 4) { fprintf(stderr,"Line %d: needs 3 operands\n",*src_lineno); exit(1); }
@@ -2030,7 +1815,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* stxp/stlxp STATUS, SRC1, SRC2, [BASE] */
     if (strcmp(mnem,"stxp")==0||strcmp(mnem,"stlxp")==0) {
         int op = strcmp(mnem,"stlxp")==0 ? OP_STLXP : OP_STXP;
         if (ntok < 5) { fprintf(stderr,"Line %d: needs 4 operands\n",*src_lineno); exit(1); }
@@ -2045,7 +1829,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* prfm/prfum TYPE, [BASE, #OFF] */
     if (strcmp(mnem,"prfm")==0||strcmp(mnem,"prfum")==0) {
         int op = strcmp(mnem,"prfum")==0 ? OP_PRFUM : OP_PRFM;
         if (ntok < 3) { fprintf(stderr,"Line %d: prfm needs 2 operands\n",*src_lineno); exit(1); }
@@ -2060,7 +1843,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* ldraa/ldrab DEST, [BASE, #OFF] */
     if (strcmp(mnem,"ldraa")==0||strcmp(mnem,"ldrab")==0) {
         int op = strcmp(mnem,"ldrab")==0 ? OP_LDRAB : OP_LDRAA;
         PARSE_REG(1, f0, n0, r0);
@@ -2076,7 +1858,6 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* push/pop pseudo-instructions */
     if (strcmp(mnem,"push")==0) {
         if (ntok < 2) { fprintf(stderr,"Line %d: push needs reg\n",*src_lineno); exit(1); }
         PARSE_REG(1, f0, n0, r0);
@@ -2090,16 +1871,12 @@ static void compile_line(const char *raw_line, int *src_lineno) {
         return;
     }
 
-    /* Unknown mnemonic */
     fprintf(stderr, "Line %d: unknown mnemonic '%s'\n", *src_lineno, tokens[0]);
     exit(1);
 
     #undef PARSE_REG
 }
 
-/* =========================================================
- * Apply fixups: resolve label references in output lines
- * ========================================================= */
 static void apply_fixups(void) {
     for (int i = 0; i < fixup_count; i++) {
         int line_idx = fixups[i].bytecode_line;
@@ -2110,7 +1887,6 @@ static void apply_fixups(void) {
             exit(1);
         }
 
-        /* Replace "FIXUP" in that output line with the target index */
         char *pos = strstr(out_lines[line_idx].line, "FIXUP");
         if (!pos) {
             fprintf(stderr, "Internal error: FIXUP marker missing in line %d\n", line_idx);
@@ -2120,16 +1896,13 @@ static void apply_fixups(void) {
         int blen = (int)(pos - out_lines[line_idx].line);
         strncpy(before, out_lines[line_idx].line, blen);
         before[blen] = '\0';
-        strcpy(after, pos + 5); /* skip "FIXUP" */
+        strcpy(after, pos + 5);                   
         char newline[MAX_LINE];
         snprintf(newline, MAX_LINE, "%s%d%s", before, target, after);
         strncpy(out_lines[line_idx].line, newline, MAX_LINE-1);
     }
 }
 
-/* =========================================================
- * Main entry point
- * ========================================================= */
 int main(int argc, char *argv[]) {
     if (argc < 3) {
         fprintf(stderr, "WebAssembler Compiler\n");
@@ -2149,24 +1922,20 @@ int main(int argc, char *argv[]) {
 
     while (fgets(line, MAX_LINE, fin)) {
         lineno++;
-        /* strip newline */
         int len = (int)strlen(line);
         while (len > 0 && (line[len-1]=='\n'||line[len-1]=='\r')) line[--len]='\0';
         compile_line(line, &lineno);
     }
     fclose(fin);
 
-    /* Apply fixups */
     apply_fixups();
 
-    /* Write output */
     FILE *fout = fopen(argv[2], "w");
     if (!fout) {
         fprintf(stderr, "Error: cannot open '%s' for writing: %s\n", argv[2], strerror(errno));
         return 1;
     }
 
-    /* Header */
     fprintf(fout, "; WebAssembler Raw Bytecode\n");
     fprintf(fout, "; Not recommended to modify\n");
     fprintf(fout, "; Contents of %s\n", argv[1]);
